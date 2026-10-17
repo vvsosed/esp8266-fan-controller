@@ -5,7 +5,7 @@
 #include <WiFiManager.h>
 
 // ---- Firmware ----
-const char *FW_VERSION = "0.0.1";          // bump by hand on release
+const char *FW_VERSION = "0.0.2";          // bump by hand on release
 #if __has_include("git_hash.h")
 #include "git_hash.h"                      // GIT_HASH, written by build.sh
 #else
