@@ -44,6 +44,24 @@ float lastTemp = DEVICE_DISCONNECTED_C;
 int lastPct = PCT_FAILSAFE;
 uint32_t lastRpm[3];
 
+// ---- History for the graph (RAM only, cleared on reboot) ----
+const int HIST_N = 360, HIST_STEP = 10;    // 1 h of 10-cycle (≈10 s) averages
+struct Sample { int16_t t10; uint8_t pct; };   // t10 = °C×10, INT16_MIN = no sensor reading
+Sample hist[HIST_N];                       // ~1.4 KB
+int histHead, histCount;                   // next write slot, valid samples
+
+void histAdd(float t, int pct) {           // called once per 1 s cycle
+    static float tSum;
+    static int nT, pctSum, n;
+    if (t != DEVICE_DISCONNECTED_C) { tSum += t; nT++; }
+    pctSum += pct;
+    if (++n < HIST_STEP) return;
+    hist[histHead] = {(int16_t)(nT ? lroundf(tSum / nT * 10) : INT16_MIN), (uint8_t)(pctSum / n)};
+    histHead = (histHead + 1) % HIST_N;
+    if (histCount < HIST_N) histCount++;
+    tSum = 0; nT = pctSum = n = 0;
+}
+
 // ---- Double reset → setup AP (RTC memory survives RST, not power loss) ----
 const uint32_t DRD_MAGIC = 0xD0D0FA17, DRD_WINDOW_MS = 10000;
 bool drdArmed = true;
@@ -86,17 +104,59 @@ void setFan(int i, int pct) {              // inverted by the transistor
     analogWrite(PWM_PIN[i], 255 - pct * 255 / 100);
 }
 
-void handleRoot() {                        // static page; status is filled in from /status.json
+// Main page = PAGE_HEAD + snprintf'd form/footer + PAGE_SCRIPT, streamed. '%' is literal in the
+// PROGMEM parts; only the snprintf part needs '%%'.
+const char PAGE_HEAD[] PROGMEM = R"HTML(<!DOCTYPE html><meta charset=utf-8>
+<meta name=viewport content='width=device-width'><title>Fan controller</title>
+<style>input{width:4em}canvas{display:block;width:100%;max-width:720px;height:220px}
+.k{display:inline-block;width:1.2em;height:3px;vertical-align:middle}</style>
+<h2 id=st>…</h2><p id=fans>
+<p><span class=k style=background:#e4572e></span> Temperature °C &nbsp;
+<span class=k style=background:#2e86de></span> Duty % &nbsp;
+<small style=color:gray>last hour, 10 s averages; dashed = ramp start/end</small>
+<canvas id=cv></canvas>
+)HTML";
+
+const char PAGE_SCRIPT[] PROGMEM = R"JS(<script>
+function u(){fetch('/status.json').then(r=>r.json()).then(d=>{
+ st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %';
+ fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>')})}
+let H;
+function g(){fetch('/history.json').then(r=>r.json()).then(h=>{H=h;draw()})}
+function draw(){
+ if(!H)return;
+ const r=devicePixelRatio||1,W=cv.clientWidth,Hh=cv.clientHeight;
+ cv.width=W*r;cv.height=Hh*r;
+ const c=cv.getContext('2d');c.scale(r,r);
+ const L=30,R=34,T=8,B=18,w=W-L-R,h=Hh-T-B,N=360,n=H.t.length;
+ const v=H.t.filter(x=>x!=null).concat([H.tl,H.th]);
+ const lo=Math.floor(Math.min(...v))-1,hi=lo+4*Math.ceil((Math.ceil(Math.max(...v))+1-lo)/4);
+ const X=i=>L+w*(N-n+i+1)/N,Yt=x=>T+h*(hi-x)/(hi-lo),Yd=x=>T+h*(100-x)/100;
+ c.font='11px sans-serif';c.lineWidth=1;c.strokeStyle='#ddd';c.fillStyle='#666';
+ for(let k=0;k<=4;k++){const y=T+h*k/4;
+  c.beginPath();c.moveTo(L,y);c.lineTo(L+w,y);c.stroke();
+  c.textAlign='right';c.fillText(hi-(hi-lo)*k/4,L-4,y+4);
+  c.textAlign='left';c.fillText(100-25*k,L+w+4,y+4)}
+ [60,45,30,15,0].forEach(m=>{c.textAlign=m==60?'left':m?'center':'right';
+  c.fillText(m?'-'+m+' min':'now',L+w*(1-m/60),Hh-4)});
+ c.setLineDash([4,4]);c.strokeStyle='#999';
+ [H.tl,H.th].forEach(x=>{c.beginPath();c.moveTo(L,Yt(x));c.lineTo(L+w,Yt(x));c.stroke()});
+ c.setLineDash([]);c.lineWidth=2;
+ [[H.d,Yd,'#2e86de'],[H.t,Yt,'#e4572e']].forEach(([a,Y,col])=>{
+  c.strokeStyle=col;c.beginPath();let p=0;
+  a.forEach((x,i)=>{if(x==null){p=0;return}p?c.lineTo(X(i),Y(x)):c.moveTo(X(i),Y(x));p=1});
+  c.stroke()})}
+u();g();setInterval(u,2000);setInterval(g,10000);addEventListener('resize',draw);
+</script>)JS";
+
+void handleRoot() {                        // status and graph are filled in by the script
     if (wm.getConfigPortalActive()) {      // setup AP: go straight to the network list
         wm.server->sendHeader("Location", "/wifi");
         wm.server->send(302);
         return;
     }
-    static char page[1536];
-    snprintf(page, sizeof page,
-        "<!DOCTYPE html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-        "<title>Fan controller</title><style>input{width:4em}</style>"
-        "<h2 id=st>…</h2><p id=fans>"
+    char form[768];
+    snprintf(form, sizeof form,
         "<form method=post action=/curve><p>"
         "Ramp <input name=tl type=number min=0 max=100 required value=%d> → "
         "<input name=th type=number min=0 max=100 required value=%d> °C<br>"
@@ -104,15 +164,35 @@ void handleRoot() {                        // static page; status is filled in f
         "<input name=ph type=number min=0 max=100 required value=%d> %%"
         "<p><button>Save</button> <button name=reset value=1 formnovalidate>Defaults</button></form>"
         "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
-        "<p style=color:gray><small>Firmware v%s · %s</small>"
-        "<script>"
-        "function u(){fetch('/status.json').then(r=>r.json()).then(d=>{"
-        "st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %%';"
-        "fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>')})}"
-        "u();setInterval(u,2000)"
-        "</script>",
+        "<p style=color:gray><small>Firmware v%s · %s</small>",
         curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax, FW_VERSION, GIT_HASH);
-    wm.server->send(200, "text/html; charset=utf-8", page);
+    wm.server->setContentLength(CONTENT_LENGTH_UNKNOWN);   // chunked on HTTP/1.1
+    wm.server->send(200, "text/html; charset=utf-8", "");
+    wm.server->sendContent_P(PAGE_HEAD);
+    wm.server->sendContent(form);
+    wm.server->sendContent_P(PAGE_SCRIPT);
+}
+
+void handleHistory() {                     // ~3.3 KB when full, so streamed in small pieces
+    auto &s = *wm.server;
+    char buf[256];
+    snprintf(buf, sizeof buf, "{\"step\":%d,\"tl\":%d,\"th\":%d,\"t\":[", HIST_STEP, curve.tLow, curve.tHigh);
+    s.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    s.send(200, "application/json", "");
+    s.sendContent(buf);
+    for (int pass = 0; pass < 2; pass++) {   // 0: temperatures, 1: duties; oldest first
+        int len = 0;
+        for (int k = 0; k < histCount; k++) {
+            const Sample &x = hist[(histHead - histCount + k + HIST_N) % HIST_N];
+            const char *sep = k ? "," : "";
+            if (pass)                    len += snprintf(buf + len, sizeof buf - len, "%s%u", sep, x.pct);
+            else if (x.t10 == INT16_MIN) len += snprintf(buf + len, sizeof buf - len, "%snull", sep);
+            else                         len += snprintf(buf + len, sizeof buf - len, "%s%.1f", sep, x.t10 / 10.0f);
+            if (len > (int)sizeof buf - 16) { s.sendContent(buf, len); len = 0; }
+        }
+        if (len) s.sendContent(buf, len);
+        s.sendContent(pass ? "]}" : "],\"d\":[");
+    }
 }
 
 void handleStatus() {
@@ -145,6 +225,7 @@ void handleCurve() {                       // form POST: validate, apply, save, 
 void addRoutes() {                         // runs before WiFiManager adds its routes, so ours win
     wm.server->on("/", handleRoot);
     wm.server->on("/status.json", handleStatus);   // not /status: WiFiManager has one
+    wm.server->on("/history.json", handleHistory);
     wm.server->on("/curve", HTTP_POST, handleCurve);
 }
 
@@ -215,6 +296,7 @@ void loop() {
     }
     lastTemp = t;
     lastPct = pct;
+    histAdd(t, pct);
 
     Serial.printf("Temp %.1f °C -> %d %% |", t, pct);
     for (int i = 0; i < 3; i++) {

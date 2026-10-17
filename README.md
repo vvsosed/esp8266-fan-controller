@@ -247,10 +247,18 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, plus the [fan curve](#change-the-fan-curve) form and links to:
+Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, and links to the pages below.
+
+**The graph:**
+- Temperature (red, left °C axis) and duty (blue, right % axis), as 10-second averages.
+- Dashed lines mark the curve's ramp start and end temperatures.
+- Gaps mean the sensor wasn't read.
+- The history is kept in the board's RAM, so it starts empty after every reboot or flash.
+- Inside the ramp, duty follows temperature linearly, so the two lines often lie on top of each other. They separate where the duty is clamped at its minimum or maximum.
 
 | Page | Use |
 |---|---|
+| `/history.json` | The graph data, oldest first: `{"step":10,"tl":21,"th":30,"t":[21.3,null,…],"d":[20,100,…]}` (`null` = no reading in that interval) |
 | `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"rpm":[600,630,660]}` (`t` is `null` when the sensor is missing) |
 | `/wifi` | Switch to a different network |
 | `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
