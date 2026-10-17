@@ -11,14 +11,16 @@ The Arduino IDE requires the sketch file name to match its folder, so `fan_contr
 ## Commands
 
 ```bash
-arduino-cli compile .                    # add -v for full compiler output
-arduino-cli compile --upload .            # compile + flash
+./build.sh                                # compile (args pass through to arduino-cli compile; add -v for full output)
+./build.sh --upload                       # compile + flash
 arduino-cli upload .                      # flash last build
 arduino-cli monitor -p $PORT --config baudrate=115200
-arduino-cli compile -e .                  # export .bin to ./build/<fqbn>/
-arduino-cli compile --clean .
+./build.sh -e                             # export .bin to ./build/<fqbn>/
+./build.sh --clean
 arduino-cli board list                    # find $PORT
 ```
+
+Build through `./build.sh`, not bare `arduino-cli compile`. It writes the gitignored `git_hash.h` (`#define GIT_HASH "<git describe --always --dirty>"`) and then execs `arduino-cli compile "$@" .`. The sketch falls back to `GIT_HASH "unknown"` via `__has_include` when the header is absent. Don't rename it to `version.h`: the ESP8266 SDK has its own `version.h` on the include path, which wins `__has_include`, leaving `GIT_HASH` undefined. `FW_VERSION` at the top of the sketch is bumped by hand. Both appear in the status page footer.
 
 These flagless forms depend on a `sketch.yaml` created by `arduino-cli board attach -p $PORT -b $FQBN .`. **`sketch.yaml` is not in the repo**, so on a fresh checkout either run `board attach` first or pass `-b $FQBN` (and `-p $PORT` for upload) on every command. Typical FQBN: `esp8266:esp8266:d1_mini:xtal=160,baud=921600`.
 

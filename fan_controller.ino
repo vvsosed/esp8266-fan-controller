@@ -4,6 +4,14 @@
 #include <ESP8266mDNS.h>
 #include <WiFiManager.h>
 
+// ---- Firmware ----
+const char *FW_VERSION = "0.0.1";          // bump by hand on release
+#if __has_include("git_hash.h")
+#include "git_hash.h"                      // GIT_HASH, written by build.sh
+#else
+#define GIT_HASH "unknown"                 // built without build.sh
+#endif
+
 // ---- Pins ----
 const uint8_t PWM_PIN[3]  = {12, 13, 15};  // D6, D7, D8 → transistor → fan pin 4
 const uint8_t TACH_PIN[3] = {5, 4, 14};    // D1, D2, D5 ← fan pin 3 (pull-up to 3.3 V)
@@ -96,13 +104,14 @@ void handleRoot() {                        // static page; status is filled in f
         "<input name=ph type=number min=0 max=100 required value=%d> %%"
         "<p><button>Save</button> <button name=reset value=1 formnovalidate>Defaults</button></form>"
         "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
+        "<p style=color:gray><small>Firmware v%s · %s</small>"
         "<script>"
         "function u(){fetch('/status.json').then(r=>r.json()).then(d=>{"
         "st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %%';"
         "fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>')})}"
         "u();setInterval(u,2000)"
         "</script>",
-        curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax);
+        curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax, FW_VERSION, GIT_HASH);
     wm.server->send(200, "text/html; charset=utf-8", page);
 }
 
