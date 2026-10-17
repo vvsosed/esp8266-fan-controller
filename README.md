@@ -52,8 +52,9 @@ fan_controller/
 | Fan 1 / 2 / 3 PWM | 12 / 13 / 15 | D6 / D7 / D8 | Through NPN/MOSFET open-drain (inverted in firmware) |
 | Fan 1 / 2 / 3 tach | 5 / 4 / 14 | D1 / D2 / D5 | 10 kΩ pull-up to **3.3 V** |
 | DS1820 data | 2 | D4 | 4.7 kΩ pull-up to 3.3 V |
+| Fans' 12 V switch | 16 | D0 | NPN + P-MOSFET high-side switch, 10 kΩ pull-up to 3.3 V. High or undriven = fans powered |
 
-Fans run on a separate 12 V supply. All grounds must be common.
+Fans run on a separate 12 V supply, switched on and off by D0 ([wiring](docs/esp8266-fan-controller-research.md#5-wiring-per-channel)). All grounds must be common.
 
 ---
 
@@ -218,7 +219,7 @@ Use the form on the [status page](#status-page): duty ramps linearly from the lo
 | Field | Default | Allowed |
 |---|---|---|
 | Ramp start / end (°C) | 21 / 30 | 0–100, start below end |
-| Duty at start / end (%) | 20 / 100 | 0–100, start ≤ end |
+| Duty at start / end (%) | 20 / 100 | 0–100, start ≤ end, end at least 1 (0 → 0 % would keep the fans switched off) |
 
 The defaults are `DEFAULT_CURVE` in `fan_controller.ino`:
 
@@ -229,6 +230,13 @@ const Curve DEFAULT_CURVE = {21, 30, 20, 100};   // tLow °C, tHigh °C, pctMin 
 Editing them only matters until a curve has been saved from the page; after that the saved curve wins until you press **Defaults** (or flash with `wipe=all`).
 
 A missing sensor and the boot period always run the fans at 100 % (`PCT_FAILSAFE`), even if the curve's maximum is lower.
+
+**Fans fully off.** Most fans don't stop at 0 % PWM; they drop to a minimum speed instead. So when the curve gives 0 %, the firmware switches off the fans' 12 V through D0:
+
+- **When it happens:** set **Duty at start** to 0 %. The curve works in whole degrees and rounds, so the duty leaves 0 % at the first whole degree where it reaches 1 %. With ramp start 22 °C that's 23 °C. A very flat curve, rising less than ½ % per degree (say 22–80 °C → 0–20 %), leaves 0 % a degree or more later.
+- **On:** the 12 V comes back on in the next 1 s cycle once the duty is above 0.
+- **Off:** the temperature has to fall 0.5 °C below that point (`POWER_HYST_C`; below 22.5 °C in the example) and stay there for 10 s straight (`POWER_OFF_DELAY_S`). In between, the fans keep running at their minimum speed. Without this, sensor noise right at the threshold would switch the fans on and off.
+- **Sensor glitch:** a failed reading runs the fans at 100 % for that one second only; then they're off again.
 
 ---
 
@@ -247,7 +255,7 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, and links to the pages below.
+Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`.
 
 **The graph:**
 - Temperature (red, left °C axis) and duty (blue, right % axis), as 10-second averages.
@@ -259,7 +267,7 @@ Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-na
 | Page | Use |
 |---|---|
 | `/history.json` | The graph data, oldest first: `{"step":10,"tl":21,"th":30,"t":[21.3,null,…],"d":[20,100,…]}` (`null` = no reading in that interval) |
-| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"rpm":[600,630,660]}` (`t` is `null` when the sensor is missing) |
+| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"pwr":1,"rpm":[600,630,660]}` (`t` is `null` when the sensor is missing; `pwr` is 0 while the fans' 12 V is off) |
 | `/wifi` | Switch to a different network |
 | `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
 
@@ -305,7 +313,9 @@ arduino-cli version
 | Board doesn't boot with hardware attached | GPIO15 pulled high (fan wired directly instead of through a transistor), or GPIO0/GPIO2 held low |
 | Fans always at 100 % | Sensor not found (`-127 °C` in the log): check the DS1820 wiring and 4.7 kΩ pull-up. Also check whether a fan is wired directly without a transistor: then the PWM is not inverted and `setFan()` needs `analogWrite(pin, pct * 255 / 100)` |
 | Occasional single `-127 °C` reading, fans jump to 100 % for a second | The firmware already retries a failed read once, because web traffic can disturb 1-Wire timing on the ESP8266. If it still shows up, check the DS1820 wiring, the 4.7 kΩ pull-up and the cable length |
-| RPM reads 0 | Missing tach pull-up, fan not powered, or grounds not common |
+| RPM reads 0 | Missing tach pull-up, fan not powered, or grounds not common. Expected while the 12 V is switched off (status page says `fans off`) |
+| Fans still spin at 0 % | The 12 V is cut only once the temperature is 0.5 °C below where the duty leaves 0 %, and then after 10 s, so wait. If the status says `fans off` and they still spin, the P-MOSFET is probably reversed: its built-in diode then passes 12 V all the time. Source goes to the 12 V supply, drain to the fans |
+| Fans never spin, even at 100 % | No 12 V reaches pin 2. Check that D0 measures 3.3 V while the firmware runs (about 1.5 V with the board in reset, where only the 10 kΩ pull-up holds it), the transistor pinouts (they differ between part numbers), and that the NPN emitter is grounded |
 | RPM jumps around | Add a 10 kΩ external pull-up (instead of `INPUT_PULLUP`) and/or 10 nF from tach pin to GND |
 | A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching a transistor collector (fan pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
 | Wi-Fi flaky or won't connect | A tach pin shorted to PWM (row above) fires 25,000 interrupts per second and starves Wi-Fi. Fix that first |

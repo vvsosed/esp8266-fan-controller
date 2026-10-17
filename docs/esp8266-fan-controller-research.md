@@ -8,6 +8,7 @@
 - **PWM:** about 25 kHz, open-drain. The most robust option is one small NPN transistor or N-MOSFET per fan, which mimics a motherboard and inverts the signal; invert the duty cycle in software.
 - **Tachometers:** these **can connect directly** to GPIOs. The output is open-collector, so a pull-up to **3.3 V** (internal or an external 10 kΩ) is all that's needed.
 - **DS1820:** fits on the one remaining good pin, **GPIO2 (D4)**, with a 4.7 kΩ pull-up.
+- **Fans fully off:** most fans don't stop at 0 % PWM, so **GPIO16 (D0)** drives one high-side switch that cuts all three fans' 12 V. The switch is a P-MOSFET, driven through an NPN.
 - **Pin budget:** with this setup the board is fully used. Any further peripherals point toward an ESP32.
 
 ---
@@ -19,7 +20,7 @@
 | Pin | Function | Typical wire colour | Notes |
 |---|---|---|---|
 | 1 | GND | Black | Must be common with ESP ground |
-| 2 | +12 V | Yellow | Always on; speed is **not** set by voltage |
+| 2 | +12 V | Yellow | Speed is **not** set by voltage. Here it is switched off only to stop the fans (§5) |
 | 3 | Tach (sense) | Green | Open-collector, 2 pulses per revolution |
 | 4 | PWM control | Blue | ~25 kHz (21–28 kHz), internal pull-up inside fan |
 
@@ -30,6 +31,7 @@ Wire colours vary by manufacturer, so always go by pin position.
 - Use a 12 V DC supply rated for the combined fan current (each fan's label lists it, usually 0.1–0.5 A), plus some margin.
 - Power the ESP board from the same supply through a small **buck converter to 5 V** feeding the board's 5 V/VIN pin.
 - **Tie all grounds together.** This is required for both the PWM and tach signals to work.
+- The fans' 12 V passes through a **high-side** switch driven by D0: a P-MOSFET ([§5](#5-wiring-per-channel)). Don't switch the fans' ground instead. A fan with its ground lifted floats toward 12 V, and so do its tach and PWM lines, which connect to 3.3 V GPIOs.
 
 ### PWM signal
 
@@ -40,7 +42,7 @@ Wire colours vary by manufacturer, so always go by pin position.
   - This keeps a 5 V fan pull-up away from the 3.3 V GPIO.
   - The signal is **inverted** (GPIO high → fan line low), so the duty cycle is inverted in software.
 - **Shortcut:** wiring the GPIO directly to pin 4 often works, but it relies on the ESP's protection diodes when a fan pulls up to 5 V. **Never do this on GPIO15** (see pin budget).
-- **0 % duty does not always mean stopped.** Many fans fall back to a minimum speed (~20–30 %). To guarantee a fan is off, its 12 V line has to be switched with a high-side MOSFET.
+- **0 % duty does not always mean stopped.** Many fans fall back to a minimum speed (~20–30 %). To guarantee a fan is off, its 12 V line has to be switched on the high side. This design does that for all three fans at once from GPIO16 (D0).
 
 ### Software PWM on the ESP8266
 
@@ -49,18 +51,18 @@ Wire colours vary by manufacturer, so always go by pin position.
 
 ### Pin budget and boot-strap constraints
 
-3 PWM + 3 tach + 1 one-wire = **7 signals**. Only five ESP8266 pins are fully free of restrictions: GPIO4, 5, 12, 13, 14.
+3 PWM + 3 tach + 1 one-wire + 1 power switch = **8 signals**. Only five ESP8266 pins are fully free of restrictions: GPIO4, 5, 12, 13, 14.
 
 | Pin | Boot requirement | Use here |
 |---|---|---|
 | GPIO15 (D8) | Must be **low** at boot (board has pull-down) | PWM output **through a transistor only**. A fan wired directly would pull it high and the board won't boot. |
 | GPIO2 (D4) | Must be **high** at boot | 1-Wire bus. Its pull-up satisfies the boot condition. |
 | GPIO0 (D3) | Must be **high** at boot; flash button | Left unused |
-| GPIO16 (D0) | No interrupt support | Unsuitable for tach |
+| GPIO16 (D0) | No interrupt support, no internal pull-up | Fans' 12 V switch (plain output). Unsuitable for tach. Must not be bridged to RST (the deep-sleep wake jumper), or driving it low resets the board |
 | GPIO1/3 (TX/RX) | Serial | Left for USB serial |
 
 - **Do not put tach lines on GPIO0 or GPIO2.** A fan holding its tach low at reset can stop the board from booting.
-- With transistor drivers the fans run at **full speed during boot**, which is a safe default.
+- With transistor drivers the fans run at **full speed during boot**, which is a safe default. The 12 V switch keeps this: the core sets every pin to input at startup, and the 10 kΩ pull-up on D0 then holds the switch on until the firmware drives it.
 
 ---
 
@@ -115,6 +117,7 @@ Optional extras:
 | Fan 2 tach | GPIO4 | D2 | 10 kΩ to 3.3 V |
 | Fan 3 tach | GPIO14 | D5 | 10 kΩ to 3.3 V |
 | DS1820 DQ | GPIO2 | D4 | 4.7 kΩ to 3.3 V |
+| Fans' 12 V switch | GPIO16 | D0 | NPN driver → P-MOSFET; 10 kΩ pull-up to 3.3 V |
 
 ---
 
@@ -152,7 +155,39 @@ GPIO2 ──┴──────────────── DS1820 DQ
 GND   ─────────────────── DS1820 GND
 ```
 
-**Power:** 12 V supply → all fan pin 2 lines and buck converter input; buck 5 V output → board 5 V/VIN; all grounds common.
+**12 V switch (one for all three fans)**
+
+A P-MOSFET sits high-side, in the fans' +12 V line (see [§1](#power)). D0 switches it through an NPN driver, because the gate sits near 12 V, out of reach of D0's 3.3 V.
+
+```
+12 V ─────────────────────────────┬────────── S   P-MOSFET (IRF9540N / IRF4905 / IRF9Z34N)
+                                  │
+                              [ 10 kΩ ]
+                                  │
+                                  ├────────── G
+                                  │
+                                  │           D ──────┬──── pin 2 (+12 V) of fans 1, 2, 3
+3.3 V ──[ 10 kΩ ]──┐              │                   │
+                   │              C                  ─┴─  1N5819 / 1N4007
+D0 ────────────────┴──[ 4.7 kΩ ]─ B   NPN             ▲   stripe (cathode) up, toward D
+                                  E   2N3904 / BC547  │
+                                  │                   │
+GND ──────────────────────────────┴───────────────────┴──── supply −, ESP GND, pin 1 of fans 1, 2, 3
+```
+
+- **Fans on:** D0 is high, or undriven and held up by the 10 kΩ pull-up during boot and reset (it then sits at about 1.5 V, enough for the NPN). The NPN conducts and pulls the gate to GND, so Vgs ≈ −12 V and the MOSFET is on.
+- **Fans off:** D0 is low. The NPN is off, the gate's 10 kΩ pulls it up to the source, and the MOSFET is off.
+- **MOSFET orientation:** source goes to the 12 V supply, drain to the fans. Reversed, its built-in body diode passes 12 V all the time and the fans never stop.
+- **MOSFET choice:** its gate sees the full −12 V, so pick one rated **Vgs ±20 V**, with Rds(on) specified at −10 V. The IRF9540N, IRF4905 and IRF9Z34N all qualify, and at 1 A they dissipate ~0.1 W without a heatsink. Small SMD parts such as the AO3401 are rated only ±12 V.
+- **Pinouts:** pin order differs between part numbers. TO-220 IRF parts are G-D-S looking at the label; a 2N3904 is E-B-C looking at the flat face, and a BC547 is C-B-E. Check the datasheet.
+- **The diode** clamps the negative spike from the wiring and motor inductance when the switch opens.
+- **Known gap:** if the board itself loses power (e.g. a dead buck converter), the pull-up loses its 3.3 V too. The fans then stop instead of running at full speed.
+
+**Power:**
+- The 12 V supply feeds the buck converter input and the switch input: the MOSFET source.
+- The switch output feeds all the fans' pin 2 lines: the MOSFET drain.
+- The buck converter's 5 V output feeds the board's 5 V/VIN pin.
+- All grounds are common.
 
 ---
 
@@ -171,6 +206,12 @@ GND   ─────────────────── DS1820 GND
 | 1 | DS1820 / DS18B20 | Temperature sensor |
 | 1 | 4.7 kΩ resistor | 1-Wire pull-up |
 | 3 | 4-pin PC fan headers | 2.54 mm pitch, keyed |
+| 1 | NPN 2N3904 / BC547 | 12 V switch driver on D0 |
+| 1 | 4.7 kΩ resistor | Driver base resistor |
+| 1 | 10 kΩ resistor | D0 pull-up to 3.3 V |
+| 1 | 1N5819 or 1N4007 diode | Across the switched 12 V, cathode to fan pin 2 |
+| 1 | P-MOSFET IRF9540N / IRF4905 / IRF9Z34N | 12 V switch; Vgs rating ±20 V |
+| 1 | 10 kΩ resistor | MOSFET gate to source |
 
 ---
 
@@ -259,7 +300,11 @@ void loop() {
 - [ ] GPIO15 drives a transistor, never a fan directly
 - [ ] No tach lines on GPIO0 / GPIO2
 - [ ] PWM duty inverted in software when using transistor drivers
-- [ ] Expect a minimum speed instead of a full stop at 0 % on many fans
+- [ ] Expect a minimum speed instead of a full stop at 0 % on many fans; the D0 switch cuts their 12 V instead
+- [ ] 12 V switch is high-side: MOSFET source on the supply, drain to the fans
+- [ ] P-MOSFET rated Vgs ±20 V
+- [ ] D0 pulled **up** to 3.3 V with 10 kΩ
+- [ ] D0 isn't bridged to RST
 - [ ] DS1820 powered from VDD (not parasite mode)
 
 ---

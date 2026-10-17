@@ -16,11 +16,14 @@ const char *FW_VERSION = "0.0.1";          // bump by hand on release
 const uint8_t PWM_PIN[3]  = {12, 13, 15};  // D6, D7, D8 → transistor → fan pin 4
 const uint8_t TACH_PIN[3] = {5, 4, 14};    // D1, D2, D5 ← fan pin 3 (pull-up to 3.3 V)
 const uint8_t ONEWIRE_PIN = 2;             // D4 ← DS1820 DQ (4.7 kΩ to 3.3 V)
+const uint8_t POWER_PIN   = 16;            // D0 → NPN → P-MOSFET on the fans' 12 V; HIGH (or undriven) = on
 
 // ---- Fan curve (defaults; the web page can change and save them) ----
 struct Curve { int tLow, tHigh, pctMin, pctMax; };   // °C, °C, %, %
 const Curve DEFAULT_CURVE = {21, 30, 20, 100};
 const int PCT_FAILSAFE = 100;              // boot and sensor missing, whatever the curve says
+const int POWER_OFF_DELAY_S = 10;          // duty must sit at 0 % this long before the 12 V is cut...
+const float POWER_HYST_C = 0.5;            // ...with the temperature this far below where the duty leaves 0 %
 Curve curve = DEFAULT_CURVE;
 
 // ---- Wi-Fi ----
@@ -43,6 +46,7 @@ WiFiManager wm;
 float lastTemp = DEVICE_DISCONNECTED_C;
 int lastPct = PCT_FAILSAFE;
 uint32_t lastRpm[3];
+bool fanPower = true;                      // 12 V rail state
 
 // ---- History for the graph (RAM only, cleared on reboot) ----
 const int HIST_N = 360, HIST_STEP = 10;    // 1 h of 10-cycle (≈10 s) averages
@@ -79,9 +83,11 @@ bool doubleReset() {                       // RST pressed again within the windo
 const uint32_t CURVE_MAGIC = 0xC0FE0001;   // bump when Curve changes layout
 struct Saved { uint32_t magic; Curve c; };
 
-bool validCurve(const Curve &c) {          // tLow < tHigh also keeps map() from dividing by zero
+// tLow < tHigh also keeps map() from dividing by zero; pctMax > 0 keeps a 0 → 0 % curve from
+// cutting the fans' 12 V at every temperature
+bool validCurve(const Curve &c) {
     return 0 <= c.tLow && c.tLow < c.tHigh && c.tHigh <= 100
-        && 0 <= c.pctMin && c.pctMin <= c.pctMax && c.pctMax <= 100;
+        && 0 <= c.pctMin && c.pctMin <= c.pctMax && 0 < c.pctMax && c.pctMax <= 100;
 }
 
 void loadCurve() {
@@ -100,8 +106,29 @@ void printCurve() {
     Serial.printf("Curve: %d-%d °C -> %d-%d %%\n", curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax);
 }
 
+int curvePct(float t) {                    // whole degrees; the core's map() rounds
+    long p = map((long)t, curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax);   // constrain() is a macro that
+    return constrain(p, curve.pctMin, curve.pctMax);                              // would run map() up to 3 times
+}
+
 void setFan(int i, int pct) {              // inverted by the transistor
     analogWrite(PWM_PIN[i], 255 - pct * 255 / 100);
+}
+
+// Fans don't stop at 0 % PWM, so 0 % cuts their 12 V. The curve leaves 0 % at a whole degree, and
+// sensor noise there must not toggle the rail: it comes on at once, but goes off only after the
+// curve gives 0 % even POWER_HYST_C warmer for POWER_OFF_DELAY_S cycles in a row. A failed read
+// (pct = PCT_FAILSAFE) powers the fans for that cycle only and leaves the count alone.
+void setFanPower(float t, int pct) {       // called once per 1 s cycle
+    static bool on = true;                 // updated from valid readings only
+    static int coldFor;                    // consecutive cycles cold enough to cut
+    if (t != DEVICE_DISCONNECTED_C) {
+        coldFor = curvePct(t + POWER_HYST_C) ? 0 : min(coldFor + 1, POWER_OFF_DELAY_S);
+        if (pct) on = true;
+        else if (coldFor == POWER_OFF_DELAY_S) on = false;
+    }
+    fanPower = on || pct;
+    digitalWrite(POWER_PIN, fanPower ? HIGH : LOW);
 }
 
 // Main page = PAGE_HEAD + snprintf'd form/footer + PAGE_SCRIPT, streamed. '%' is literal in the
@@ -119,7 +146,7 @@ const char PAGE_HEAD[] PROGMEM = R"HTML(<!DOCTYPE html><meta charset=utf-8>
 
 const char PAGE_SCRIPT[] PROGMEM = R"JS(<script>
 function u(){fetch('/status.json').then(r=>r.json()).then(d=>{
- st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %';
+ st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %'+(d.pwr?'':' · fans off');
  fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>')})}
 let H;
 function g(){fetch('/history.json').then(r=>r.json()).then(h=>{H=h;draw()})}
@@ -161,7 +188,7 @@ void handleRoot() {                        // status and graph are filled in by 
         "Ramp <input name=tl type=number min=0 max=100 required value=%d> → "
         "<input name=th type=number min=0 max=100 required value=%d> °C<br>"
         "Duty <input name=pl type=number min=0 max=100 required value=%d> → "
-        "<input name=ph type=number min=0 max=100 required value=%d> %%"
+        "<input name=ph type=number min=1 max=100 required value=%d> %%"
         "<p><button>Save</button> <button name=reset value=1 formnovalidate>Defaults</button></form>"
         "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
         "<p style=color:gray><small>Firmware v%s · %s</small>",
@@ -198,9 +225,9 @@ void handleHistory() {                     // ~3.3 KB when full, so streamed in 
 void handleStatus() {
     char t[12] = "null";                   // sensor missing
     if (lastTemp != DEVICE_DISCONNECTED_C) snprintf(t, sizeof t, "%.1f", lastTemp);
-    char json[80];
-    snprintf(json, sizeof json, "{\"t\":%s,\"pct\":%d,\"rpm\":[%u,%u,%u]}",
-        t, lastPct, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2]);
+    char json[96];
+    snprintf(json, sizeof json, "{\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u]}",
+        t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2]);
     wm.server->send(200, "application/json", json);
 }
 
@@ -211,7 +238,7 @@ void handleCurve() {                       // form POST: validate, apply, save, 
              (int)wm.server->arg("pl").toInt(), (int)wm.server->arg("ph").toInt()};
         if (!validCurve(c)) {
             wm.server->send(400, "text/html; charset=utf-8",
-                "<meta charset=utf-8>Need 0 ≤ low &lt; high ≤ 100 °C and 0 ≤ min ≤ max ≤ 100 %. <a href=/>Back</a>");
+                "<meta charset=utf-8>Need 0 ≤ low &lt; high ≤ 100 °C and 0 ≤ min ≤ max ≤ 100 %, max &gt; 0. <a href=/>Back</a>");
             return;
         }
     }
@@ -240,6 +267,8 @@ void setup() {
     analogWriteFreq(25000);                  // 25 kHz per fan spec
     analogWriteRange(255);
 
+    digitalWrite(POWER_PIN, HIGH);           // GPIO16's latch takes this while still an input, so
+    pinMode(POWER_PIN, OUTPUT);              // D0 never drives low; until here the 10 kΩ pull-up kept the 12 V on
     for (int i = 0; i < 3; i++) {
         pinMode(PWM_PIN[i], OUTPUT);
         pinMode(TACH_PIN[i], INPUT);           // use INPUT_PULLUP if no external resistor
@@ -292,15 +321,16 @@ void loop() {
 
     int pct = PCT_FAILSAFE;                  // sensor missing → full speed
     if (t != DEVICE_DISCONNECTED_C) {
-        pct = constrain(map((long)t, curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax), curve.pctMin, curve.pctMax);
+        pct = curvePct(t);
     }
     lastTemp = t;
     lastPct = pct;
     histAdd(t, pct);
+    setFanPower(t, pct);
 
-    Serial.printf("Temp %.1f °C -> %d %% |", t, pct);
+    Serial.printf("Temp %.1f °C -> %d %%%s |", t, pct, fanPower ? "" : " (12 V off)");
     for (int i = 0; i < 3; i++) {
-        setFan(i, pct);
+        setFan(i, fanPower ? pct : 100);       // 12 V cut: 100 % = GPIO low, so the PWM transistors idle too
         noInterrupts(); uint32_t p = pulses[i]; pulses[i] = 0; interrupts();
         lastRpm[i] = p * 30000UL / dt;
         Serial.printf(" Fan%d %u RPM", i + 1, (unsigned)lastRpm[i]);
