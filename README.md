@@ -106,6 +106,25 @@ Save board and port into `sketch.yaml` so later commands need no flags:
 arduino-cli board attach -p $PORT -b $FQBN .
 ```
 
+### 5. Resolve `.local` names (for `http://fan-controller.local/`)
+
+The board announces itself over mDNS. Linux resolves `.local` names only when the Avahi daemon runs and `nss-mdns` is hooked into name lookup. Manjaro usually ships both packages with the daemon disabled.
+
+```bash
+sudo pacman -S --needed avahi nss-mdns
+grep '^hosts' /etc/nsswitch.conf      # must contain: mdns_minimal [NOTFOUND=return] before resolve
+sudo systemctl enable --now avahi-daemon
+getent hosts fan-controller.local     # once the board is on Wi-Fi: prints its IP
+```
+
+If the `hosts:` line lacks `mdns_minimal`, edit it to look like this:
+
+```
+hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns
+```
+
+Run the `sudo` lines in a normal terminal. Claude Code's `!` prefix can't answer the password prompt.
+
 ---
 
 ## Everyday tasks
@@ -214,7 +233,7 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller.local/` or the IP from serial. It shows the temperature, fan duty and each fan's RPM, refreshing every 2 s, plus links to:
+Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, refreshing every 2 s, plus links to:
 
 | Page | Use |
 |---|---|
@@ -262,7 +281,7 @@ arduino-cli version
 | A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching a transistor collector (fan pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
 | Wi-Fi flaky or won't connect | A tach pin shorted to PWM (row above) fires 25,000 interrupts per second and starves Wi-Fi. Fix that first |
 | Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
-| `fan-controller.local` doesn't resolve | Linux needs mDNS: `sudo pacman -S nss-mdns`, add `mdns_minimal [NOTFOUND=return]` before `resolve` in the `hosts:` line of `/etc/nsswitch.conf`, and `sudo systemctl enable --now avahi-daemon`. Or use the IP from serial |
+| `fan-controller.local` doesn't resolve | Usually `avahi-daemon` isn't running (`systemctl is-active avahi-daemon`). See [Setup step 5](#5-resolve-local-names-for-httpfan-controllerlocal). If it runs and still fails, a firewall may be blocking UDP 5353. Or use the IP from serial |
 | Status page unreachable after changing network | The board couldn't join the new network (wrong password, or out of range). Press RST: if the saved network still can't be reached, it falls back to the setup access point after 20 s |
 
 ---
