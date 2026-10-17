@@ -196,6 +196,16 @@ sudo pacman -S esptool
 esptool.py --port $PORT --baud 460800 write_flash 0x0 build/*/fan_controller.ino.bin
 ```
 
+### Flash over Wi-Fi from the browser
+
+Once the board is on your network, it doesn't need the USB cable:
+
+1. Run `./build.sh -e`. Commit first if you want a clean hash in the [footer](#status-page).
+2. On the status page, open **Info / erase Wi-Fi** → **Update**, choose `build/esp8266.esp8266.d1_mini/fan_controller.ino.bin` and press **Update**.
+3. The page says `Update successful. Device rebooting now...`, waits until the board answers again (about 20 s), then opens the status page. Check the version in the footer.
+
+The fans run at 100 % during the reboot. The saved curve and Wi-Fi settings are kept. If the board isn't back within a minute, press RST once (twice opens the setup access point).
+
 ### Erase the flash completely
 
 Use this before flashing if the board behaves oddly after flashing other firmware.
@@ -270,6 +280,7 @@ Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-na
 | `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"pwr":1,"rpm":[600,630,660]}` (`t` is `null` when the sensor is missing; `pwr` is 0 while the fans' 12 V is off) |
 | `/wifi` | Switch to a different network |
 | `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
+| `/update` | Upload new firmware ([Flash over Wi-Fi](#flash-over-wi-fi-from-the-browser)) |
 
 The footer shows what's running, e.g. `Firmware v0.0.1 · 37454aa`:
 
@@ -286,7 +297,7 @@ The timeouts are `CONNECT_TIMEOUT_S` and `PORTAL_TIMEOUT_S` at the top of `fan_c
 ### Security
 
 - `AP_PASS` is committed in the source, so change it before flashing if the repo is shared. It must be at least 8 characters.
-- The status and Wi-Fi pages on your LAN have no login. Anyone on your network can open them, change the fan curve, and change or erase the Wi-Fi settings.
+- The status and Wi-Fi pages on your LAN have no login. Anyone on your network can open them, change the fan curve, change or erase the Wi-Fi settings, and flash new firmware.
 
 ---
 

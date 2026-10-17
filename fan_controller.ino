@@ -249,6 +249,15 @@ void handleCurve() {                       // form POST: validate, apply, save, 
     wm.server->send(303);
 }
 
+// Goes into the <head> of WiFiManager's own pages. Its OTA result page (/u) has no link back and
+// the board reboots under it, so after a successful update this polls until we answer again and
+// opens our page; replace() keeps Back from re-posting the firmware. RAM, not PROGMEM: WiFiManager
+// appends it as a plain char*.
+const char WM_HEAD[] = R"JS(<script>addEventListener('DOMContentLoaded',()=>{
+ if(location.pathname!='/u'||!document.querySelector('.msg.S'))return;
+ let p=()=>fetch('/status.json',{signal:AbortSignal.timeout(2000)}).then(()=>location.replace('/'),()=>setTimeout(p,1000));
+ setTimeout(p,3000)})</script>)JS";
+
 void addRoutes() {                         // runs before WiFiManager adds its routes, so ours win
     wm.server->on("/", handleRoot);
     wm.server->on("/status.json", handleStatus);   // not /status: WiFiManager has one
@@ -289,6 +298,7 @@ void setup() {
 
     wm.setHostname(HOSTNAME);
     wm.setWebServerCallback(addRoutes);
+    wm.setCustomHeadElement(WM_HEAD);        // back to / after a browser firmware update
     wm.setConfigPortalBlocking(false);       // loop keeps regulating fans while the AP is up
     wm.setConnectTimeout(CONNECT_TIMEOUT_S);
     wm.setAPClientCheck(true);               // don't time out while a phone is joined to the AP
