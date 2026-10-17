@@ -7,8 +7,8 @@ const uint8_t TACH_PIN[3] = {5, 4, 14};    // D1, D2, D5 ← fan pin 3 (pull-up 
 const uint8_t ONEWIRE_PIN = 2;             // D4 ← DS1820 DQ (4.7 kΩ to 3.3 V)
 
 // ---- Fan curve ----
-const int T_LOW = 30,   T_HIGH = 50;       // °C
-const int PCT_MIN = 30, PCT_MAX = 100;     // %
+const int T_LOW = 21,   T_HIGH = 30;       // °C
+const int PCT_MIN = 20, PCT_MAX = 100;     // %
 
 // ---- Tach counting ----
 volatile uint32_t pulses[3];
