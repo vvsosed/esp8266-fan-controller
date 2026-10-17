@@ -209,12 +209,22 @@ esptool.py --port $PORT flash_id
 
 ### Change the fan curve
 
-Edit the constants at the top of `fan_controller.ino`, then compile and flash:
+Use the form on the [status page](#status-page): duty ramps linearly from the low % at the low temperature to the high % at the high temperature, and is clamped outside that range. **Save** applies it on the next 1 s cycle and stores it in flash, so it survives reboots. **Defaults** restores the values compiled into the firmware.
+
+| Field | Default | Allowed |
+|---|---|---|
+| Ramp start / end (°C) | 21 / 30 | 0–100, start below end |
+| Duty at start / end (%) | 20 / 100 | 0–100, start ≤ end |
+
+The defaults are `DEFAULT_CURVE` in `fan_controller.ino`:
 
 ```cpp
-const int T_LOW = 30,   T_HIGH = 50;     // °C: ramp starts / reaches max
-const int PCT_MIN = 30, PCT_MAX = 100;   // % duty at T_LOW / T_HIGH
+const Curve DEFAULT_CURVE = {21, 30, 20, 100};   // tLow °C, tHigh °C, pctMin %, pctMax %
 ```
+
+Editing them only matters until a curve has been saved from the page; after that the saved curve wins until you press **Defaults** (or flash with `wipe=all`).
+
+A missing sensor and the boot period always run the fans at 100 % (`PCT_FAILSAFE`), even if the curve's maximum is lower.
 
 ---
 
@@ -233,10 +243,11 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, refreshing every 2 s, plus links to:
+Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, plus the [fan curve](#change-the-fan-curve) form and links to:
 
 | Page | Use |
 |---|---|
+| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"rpm":[600,630,660]}` (`t` is `null` when the sensor is missing) |
 | `/wifi` | Switch to a different network |
 | `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
 
@@ -250,7 +261,7 @@ The timeouts are `CONNECT_TIMEOUT_S` and `PORTAL_TIMEOUT_S` at the top of `fan_c
 ### Security
 
 - `AP_PASS` is committed in the source, so change it before flashing if the repo is shared. It must be at least 8 characters.
-- The status and Wi-Fi pages on your LAN have no login. Anyone on your network can open them and change or erase the Wi-Fi settings.
+- The status and Wi-Fi pages on your LAN have no login. Anyone on your network can open them, change the fan curve, and change or erase the Wi-Fi settings.
 
 ---
 
@@ -283,6 +294,7 @@ arduino-cli version
 | Wi-Fi flaky or won't connect | A tach pin shorted to PWM (row above) fires 25,000 interrupts per second and starves Wi-Fi. Fix that first |
 | Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
 | `fan-controller.local` doesn't resolve | Usually `avahi-daemon` isn't running (`systemctl is-active avahi-daemon`). See [Setup step 5](#5-resolve-local-names-for-httpfan-controllerlocal). If it runs and still fails, a firewall may be blocking UDP 5353. Or use the IP from serial |
+| Changed `DEFAULT_CURVE` and flashed, but the curve didn't change | A curve saved from the status page takes priority over the compiled defaults. Press **Defaults** on the page |
 | Status page unreachable after changing network | The board couldn't join the new network (wrong password, or out of range). Press RST: if the saved network still can't be reached, it falls back to the setup access point after 20 s |
 
 ---
