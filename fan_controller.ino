@@ -15,7 +15,7 @@ const int PCT_MIN = 20, PCT_MAX = 100;     // %
 // ---- Wi-Fi ----
 const char *HOSTNAME = "fan-controller";   // DHCP name + http://fan-controller.local/
 const char *AP_PASS  = "fancontrol";       // setup AP password, min 8 chars; change before flashing
-const int CONNECT_TIMEOUT_S = 20, PORTAL_TIMEOUT_S = 180;
+const int CONNECT_TIMEOUT_S = 20, PORTAL_TIMEOUT_S = 180;  // s: router join attempt (fans 100 %) / setup AP lifetime before retry
 
 // ---- Tach counting ----
 volatile uint32_t pulses[3];
