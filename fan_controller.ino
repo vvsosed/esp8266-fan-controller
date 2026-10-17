@@ -129,6 +129,7 @@ void loop() {
     last = now;
 
     float t = sensors.getTempCByIndex(0);
+    if (t == DEVICE_DISCONNECTED_C) t = sensors.getTempCByIndex(0);   // web traffic can evict OneWire from the flash cache; 2nd try runs cached
     sensors.requestTemperatures();           // start next conversion
 
     int pct = PCT_MAX;                       // sensor missing → full speed

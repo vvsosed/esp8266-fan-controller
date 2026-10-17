@@ -276,6 +276,7 @@ arduino-cli version
 | `Port busy` / upload fails right away | Serial monitor still open; close it |
 | Board doesn't boot with hardware attached | GPIO15 pulled high (fan wired directly instead of through a transistor), or GPIO0/GPIO2 held low |
 | Fans always at 100 % | Sensor not found (`-127 °C` in the log): check the DS1820 wiring and 4.7 kΩ pull-up. Also check whether a fan is wired directly without a transistor: then the PWM is not inverted and `setFan()` needs `analogWrite(pin, pct * 255 / 100)` |
+| Occasional single `-127 °C` reading, fans jump to 100 % for a second | The firmware already retries a failed read once, because web traffic can disturb 1-Wire timing on the ESP8266. If it still shows up, check the DS1820 wiring, the 4.7 kΩ pull-up and the cable length |
 | RPM reads 0 | Missing tach pull-up, fan not powered, or grounds not common |
 | RPM jumps around | Add a 10 kΩ external pull-up (instead of `INPUT_PULLUP`) and/or 10 nF from tach pin to GND |
 | A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching a transistor collector (fan pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
