@@ -1,6 +1,6 @@
 # fan_controller
 
-ESP8266 firmware that drives three 4-pin PWM PC fans from a DS1820 temperature reading and reports each fan's RPM over serial.
+ESP8266 firmware that drives three 4-pin PWM PC fans from a DS1820 temperature reading, reports each fan's RPM over serial, and serves a status page over Wi-Fi.
 
 Hardware design, wiring and parts list: see [`docs/esp8266-fan-controller-research.md`](docs/esp8266-fan-controller-research.md).
 
@@ -76,7 +76,7 @@ arduino-cli core install esp8266:esp8266
 ### 3. Install libraries
 
 ```bash
-arduino-cli lib install OneWire DallasTemperature
+arduino-cli lib install OneWire DallasTemperature WiFiManager@2.0.17
 ```
 
 ### 4. Attach board and port to the sketch
@@ -141,6 +141,12 @@ Temp 27.4 °C -> 30 % | Fan1 840 RPM Fan2 812 RPM Fan3 865 RPM
 
 A burst of garbage right after reset is normal: the ESP8266 bootloader prints at 74880 baud.
 
+Lines starting with `*wm:` come from WiFiManager. Once the board joins your router it prints where to find the [status page](#wi-fi):
+
+```
+Web UI: http://192.168.1.42/  (http://fan-controller.local/)
+```
+
 ### Get the compiled binary
 
 By default, builds go to the cache at `~/.cache/arduino/sketches/<HASH>/fan_controller.ino.bin` (older CLI versions use `/tmp/arduino/sketches/<HASH>/`).
@@ -193,6 +199,42 @@ const int PCT_MIN = 30, PCT_MAX = 100;   // % duty at T_LOW / T_HIGH
 
 ---
 
+## Wi-Fi
+
+Your network's name and password are never in the source. WiFiManager stores them in the ESP's own flash.
+
+### First-time setup
+
+1. Flash the board. With no network saved, it starts an access point named `FanController-XXXXXX` (the chip ID).
+2. Join it from a phone or laptop. The password is `AP_PASS` in `fan_controller.ino` (default `fancontrol`).
+3. A setup page opens by itself (otherwise browse to `http://192.168.4.1/`). Pick your network, enter its password, Save.
+4. The access point shuts down and the board joins your router. Serial prints the `Web UI:` line.
+
+The fans keep following the temperature the whole time the access point is up.
+
+### Status page
+
+Open `http://fan-controller.local/` or the IP from serial. It shows the temperature, fan duty and each fan's RPM, refreshing every 2 s, plus links to:
+
+| Page | Use |
+|---|---|
+| `/wifi` | Switch to a different network |
+| `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
+
+### Getting back into setup
+
+- **Automatically:** if the saved network can't be reached at boot, the board tries for 20 s (fans at 100 %), then opens the setup access point for 3 minutes, then restarts and tries again. The access point stays up while a device is joined to it.
+- **Double reset:** press RST, then press it again within 10 s. The setup access point opens with the same 3-minute timeout. Unplugging power doesn't count; it must be the RST button.
+
+The timeouts are `CONNECT_TIMEOUT_S` and `PORTAL_TIMEOUT_S` at the top of `fan_controller.ino`.
+
+### Security
+
+- `AP_PASS` is committed in the source, so change it before flashing if the repo is shared. It must be at least 8 characters.
+- The status and Wi-Fi pages on your LAN have no login. Anyone on your network can open them and change or erase the Wi-Fi settings.
+
+---
+
 ## Maintenance
 
 ```bash
@@ -218,6 +260,10 @@ arduino-cli version
 | RPM reads 0 | Missing tach pull-up, fan not powered, or grounds not common |
 | RPM jumps around | Add a 10 kΩ external pull-up (instead of `INPUT_PULLUP`) and/or 10 nF from tach pin to GND |
 | A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching a transistor collector (fan pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
+| Wi-Fi flaky or won't connect | A tach pin shorted to PWM (row above) fires 25,000 interrupts per second and starves Wi-Fi. Fix that first |
+| Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
+| `fan-controller.local` doesn't resolve | Linux needs mDNS: `sudo pacman -S nss-mdns`, add `mdns_minimal [NOTFOUND=return]` before `resolve` in the `hosts:` line of `/etc/nsswitch.conf`, and `sudo systemctl enable --now avahi-daemon`. Or use the IP from serial |
+| Status page unreachable after changing network | The board couldn't join the new network (wrong password, or out of range). Press RST: if the saved network still can't be reached, it falls back to the setup access point after 20 s |
 
 ---
 

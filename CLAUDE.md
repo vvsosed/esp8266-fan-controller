@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Single-sketch Arduino firmware for an ESP8266 (Wemos D1 mini / NodeMCU) that drives three 4-pin PWM PC fans from one DS1820 temperature reading and prints each fan's RPM over serial. There is no build system, test suite or CI: verification is "it compiles" plus reading the serial output on real hardware.
+Single-sketch Arduino firmware for an ESP8266 (Wemos D1 mini / NodeMCU) that drives three 4-pin PWM PC fans from one DS1820 temperature reading, prints each fan's RPM over serial, and serves a status page over Wi-Fi. There is no build system, test suite or CI: verification is "it compiles" plus reading the serial output and the status page on real hardware.
 
 The Arduino IDE requires the sketch file name to match its folder, so `fan_controller.ino` cannot be renamed or moved without renaming the directory too.
 
@@ -22,7 +22,7 @@ arduino-cli board list                    # find $PORT
 
 These flagless forms depend on a `sketch.yaml` created by `arduino-cli board attach -p $PORT -b $FQBN .`. **`sketch.yaml` is not in the repo**, so on a fresh checkout either run `board attach` first or pass `-b $FQBN` (and `-p $PORT` for upload) on every command. Typical FQBN: `esp8266:esp8266:d1_mini:xtal=160,baud=921600`.
 
-Prerequisites (once per machine): ESP8266 core from `https://arduino.esp8266.com/stable/package_esp8266com_index.json`, plus `arduino-cli lib install OneWire DallasTemperature`. The serial monitor holds the port — close it before uploading. README.md has the full Manjaro/Arch setup and a troubleshooting table.
+Prerequisites (once per machine): ESP8266 core from `https://arduino.esp8266.com/stable/package_esp8266com_index.json`, plus `arduino-cli lib install OneWire DallasTemperature WiFiManager@2.0.17` (tzapu). The serial monitor holds the port — close it before uploading. README.md has the full Manjaro/Arch setup and a troubleshooting table.
 
 ## Architecture
 
@@ -34,6 +34,10 @@ Everything lives in `fan_controller.ino`: a 1-second cooperative loop (early-ret
 - **Temperature is one cycle stale by design.** `setWaitForConversion(false)` plus "read, then request next" keeps the 750 ms DS1820 conversion off the loop.
 - **RPM = pulses × 30000 / dt_ms** (2 pulses per revolution). `dt` is measured, not assumed, so the reading stays correct if a cycle runs long. Counters are snapshot-and-cleared inside `noInterrupts()`.
 - **The fan curve** is the four constants at the top (`T_LOW`/`T_HIGH`, `PCT_MIN`/`PCT_MAX`), linearly mapped and clamped.
+- **Wi-Fi is WiFiManager in non-blocking mode.** `wm.process()` and `MDNS.update()` sit *above* the 1 s gate in `loop()` so they run every pass; fan regulation continues while the setup AP is up. The only long block is `autoConnect()` in `setup()` (≤ `CONNECT_TIMEOUT_S`, fans already at `PCT_MAX`); `/wifi` scans and network saves also stall the loop for a few seconds, which is harmless because PWM is timer-driven and `dt` is measured.
+  - There is one web server: WiFiManager's `wm.server`. It is used both for the setup AP (config portal) and on the LAN (`startWebPortal()`, started by the edge check in `loop()` once connected). Our routes go in `addRoutes()` via `setWebServerCallback`, which WiFiManager calls *before* registering its own, so our `/` shadows its menu. `handleRoot()` redirects to `/wifi` while `wm.getConfigPortalActive()` (setup AP) and otherwise renders the `last*` globals that the 1 s block fills.
+  - Portal timeout (`PORTAL_TIMEOUT_S`) is set only when a network is already saved, and its callback restarts the board to retry it. First-time setup never times out.
+  - Double reset uses RTC user memory block 0 (survives RST, not power loss) and only counts `REASON_EXT_SYS_RST`, so crashes and `ESP.restart()` don't trigger it. No GPIOs are involved.
 
 ## Hardware constraints that bind the code
 
