@@ -111,7 +111,7 @@ Save board and port into `sketch.yaml` so later commands need no flags:
 arduino-cli board attach -p $PORT -b $FQBN .
 ```
 
-### 5. Resolve `.local` names (for `http://fan-controller.local/`)
+### 5. Resolve `.local` names
 
 The board announces itself over mDNS. Linux resolves `.local` names only when the Avahi daemon runs and `nss-mdns` is hooked into name lookup. Manjaro usually ships both packages with the daemon disabled.
 
@@ -119,7 +119,8 @@ The board announces itself over mDNS. Linux resolves `.local` names only when th
 sudo pacman -S --needed avahi nss-mdns
 grep '^hosts' /etc/nsswitch.conf      # must contain: mdns_minimal [NOTFOUND=return] before resolve
 sudo systemctl enable --now avahi-daemon
-getent hosts fan-controller.local     # once the board is on Wi-Fi: prints its IP
+getent hosts fan-controller-XXXXXX.local   # once the board is on Wi-Fi: prints its IP
+avahi-browse -rt _http._tcp                # lists every board on the network with its name and IP
 ```
 
 If the `hosts:` line lacks `mdns_minimal`, edit it to look like this:
@@ -168,7 +169,7 @@ A burst of garbage right after reset is normal: the ESP8266 bootloader prints at
 Lines starting with `*wm:` come from WiFiManager. Once the board joins your router it prints where to find the [status page](#wi-fi):
 
 ```
-Web UI: http://192.168.1.42/  (http://fan-controller.local/)
+Web UI: http://192.168.1.42/  (http://fan-controller-1a2b3c.local/)
 ```
 
 ### Get the compiled binary
@@ -256,7 +257,7 @@ Your network's name and password are never in the source. WiFiManager stores the
 
 ### First-time setup
 
-1. Flash the board. With no network saved, it starts an access point named `FanController-XXXXXX` (the chip ID).
+1. Flash the board. With no network saved, it starts an access point named `fan-controller-XXXXXX`, where `XXXXXX` is its chip ID. The board keeps that name on your network too (`http://fan-controller-XXXXXX.local/`), so note it down. Every board gets its own name, so several can share one network.
 2. Join it from a phone or laptop. The password is `AP_PASS` in `fan_controller.ino` (default `fancontrol`).
 3. A setup page opens by itself (otherwise browse to `http://192.168.4.1/`). Pick your network, enter its password, Save.
 4. The access point shuts down and the board joins your router. Serial prints the `Web UI:` line.
@@ -265,7 +266,7 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller.local/` (needs [mDNS on your PC](#5-resolve-local-names-for-httpfan-controllerlocal)) or the IP from serial. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`.
+Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access point (needs [mDNS on your PC](#5-resolve-local-names)), or the IP from serial. The page title and footer show the board's name. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`.
 
 **The graph:**
 - Temperature (red, left °C axis) and duty (blue, right % axis), as 10-second averages.
@@ -331,7 +332,7 @@ arduino-cli version
 | A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching a transistor collector (fan pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
 | Wi-Fi flaky or won't connect | A tach pin shorted to PWM (row above) fires 25,000 interrupts per second and starves Wi-Fi. Fix that first |
 | Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
-| `fan-controller.local` doesn't resolve | Usually `avahi-daemon` isn't running (`systemctl is-active avahi-daemon`). See [Setup step 5](#5-resolve-local-names-for-httpfan-controllerlocal). If it runs and still fails, a firewall may be blocking UDP 5353. Or use the IP from serial |
+| `fan-controller-XXXXXX.local` doesn't resolve | Check the chip ID first: `avahi-browse -rt _http._tcp` or your router's DHCP list shows each board's name. Otherwise `avahi-daemon` usually isn't running (`systemctl is-active avahi-daemon`). See [Setup step 5](#5-resolve-local-names). If it runs and still fails, a firewall may be blocking UDP 5353. Or use the IP from serial |
 | Changed `DEFAULT_CURVE` and flashed, but the curve didn't change | A curve saved from the status page takes priority over the compiled defaults. Press **Defaults** on the page |
 | Status page unreachable after changing network | The board couldn't join the new network (wrong password, or out of range). Press RST: if the saved network still can't be reached, it falls back to the setup access point after 20 s |
 

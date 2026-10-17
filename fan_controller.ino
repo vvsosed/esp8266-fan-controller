@@ -27,7 +27,7 @@ const float POWER_HYST_C = 0.5;            // ...with the temperature this far b
 Curve curve = DEFAULT_CURVE;
 
 // ---- Wi-Fi ----
-const char *HOSTNAME = "fan-controller";   // DHCP name + http://fan-controller.local/
+char hostname[24];                         // fan-controller-<chip id>: DHCP, http://<name>.local/ and setup AP; set in setup()
 const char *AP_PASS  = "fancontrol";       // setup AP password, min 8 chars; change before flashing
 const int CONNECT_TIMEOUT_S = 20, PORTAL_TIMEOUT_S = 180;  // s: router join attempt (fans 100 %) / setup AP lifetime before retry
 
@@ -131,10 +131,12 @@ void setFanPower(float t, int pct) {       // called once per 1 s cycle
     digitalWrite(POWER_PIN, fanPower ? HIGH : LOW);
 }
 
-// Main page = PAGE_HEAD + snprintf'd form/footer + PAGE_SCRIPT, streamed. '%' is literal in the
-// PROGMEM parts; only the snprintf part needs '%%'.
+// Main page = PAGE_HEAD + hostname (the title) + PAGE_TOP + snprintf'd form/footer + PAGE_SCRIPT,
+// streamed. '%' is literal in the PROGMEM parts; only the snprintf part needs '%%'.
 const char PAGE_HEAD[] PROGMEM = R"HTML(<!DOCTYPE html><meta charset=utf-8>
-<meta name=viewport content='width=device-width'><title>Fan controller</title>
+<meta name=viewport content='width=device-width'><title>)HTML";
+
+const char PAGE_TOP[] PROGMEM = R"HTML(</title>
 <style>input{width:4em}canvas{display:block;width:100%;max-width:720px;height:220px}
 .k{display:inline-block;width:1.2em;height:3px;vertical-align:middle}</style>
 <h2 id=st>…</h2><p id=fans>
@@ -191,11 +193,13 @@ void handleRoot() {                        // status and graph are filled in by 
         "<input name=ph type=number min=1 max=100 required value=%d> %%"
         "<p><button>Save</button> <button name=reset value=1 formnovalidate>Defaults</button></form>"
         "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
-        "<p style=color:gray><small>Firmware v%s · %s</small>",
-        curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax, FW_VERSION, GIT_HASH);
+        "<p style=color:gray><small>%s · Firmware v%s · %s</small>",
+        curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax, hostname, FW_VERSION, GIT_HASH);
     wm.server->setContentLength(CONTENT_LENGTH_UNKNOWN);   // chunked on HTTP/1.1
     wm.server->send(200, "text/html; charset=utf-8", "");
     wm.server->sendContent_P(PAGE_HEAD);
+    wm.server->sendContent(hostname);
+    wm.server->sendContent_P(PAGE_TOP);
     wm.server->sendContent(form);
     wm.server->sendContent_P(PAGE_SCRIPT);
 }
@@ -267,8 +271,8 @@ void addRoutes() {                         // runs before WiFiManager adds its r
 
 void startLan() {                          // joined the router: serve the pages there
     wm.startWebPortal();
-    if (!MDNS.isRunning() && MDNS.begin(HOSTNAME)) MDNS.addService("http", "tcp", 80);
-    Serial.printf("Web UI: http://%s/  (http://%s.local/)\n", WiFi.localIP().toString().c_str(), HOSTNAME);
+    if (!MDNS.isRunning() && MDNS.begin(hostname)) MDNS.addService("http", "tcp", 80);
+    Serial.printf("Web UI: http://%s/  (http://%s.local/)\n", WiFi.localIP().toString().c_str(), hostname);
 }
 
 void setup() {
@@ -292,11 +296,10 @@ void setup() {
     sensors.setWaitForConversion(false);     // non-blocking conversions
     sensors.requestTemperatures();
 
-    char apName[24];
-    snprintf(apName, sizeof apName, "FanController-%06X", ESP.getChipId());
+    snprintf(hostname, sizeof hostname, "fan-controller-%06x", ESP.getChipId());   // unique per board, so several can share a network
     bool forcePortal = doubleReset();
 
-    wm.setHostname(HOSTNAME);
+    wm.setHostname(hostname);
     wm.setWebServerCallback(addRoutes);
     wm.setCustomHeadElement(WM_HEAD);        // back to / after a browser firmware update
     wm.setConfigPortalBlocking(false);       // loop keeps regulating fans while the AP is up
@@ -307,9 +310,9 @@ void setup() {
 
     if (forcePortal) {
         Serial.println("Double reset: starting setup AP");
-        wm.startConfigPortal(apName, AP_PASS);
+        wm.startConfigPortal(hostname, AP_PASS);
     } else {
-        wm.autoConnect(apName, AP_PASS);       // can't connect → starts the setup AP
+        wm.autoConnect(hostname, AP_PASS);     // can't connect → starts the setup AP
     }
 }
 
