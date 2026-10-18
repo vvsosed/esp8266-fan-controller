@@ -1,6 +1,6 @@
 # fan_controller
 
-ESP8266 firmware that drives three 4-pin PWM PC fans from a DS1820 temperature reading, reports each fan's RPM over serial, and serves a status page over Wi-Fi.
+ESP8266 firmware that drives three 4-pin PWM PC fans from a DS1820 temperature reading, reports each fan's RPM over serial, serves a status page over Wi-Fi, and shares its fan curve and readings over MQTT.
 
 Hardware design, wiring and parts list: see [`docs/esp8266-fan-controller-research.md`](docs/esp8266-fan-controller-research.md).
 
@@ -40,6 +40,7 @@ fan_controller/
 ├── .gitignore
 ├── docs/
 │   └── esp8266-fan-controller-research.md   # hardware design, wiring, parts list
+├── mqtt-broker/         # throwaway Mosquitto in Docker for testing MQTT (Dockerfile + entrypoint.sh)
 └── build/               # only if you export binaries (-e); not committed
 ```
 
@@ -81,7 +82,7 @@ arduino-cli core install esp8266:esp8266
 ### 3. Install libraries
 
 ```bash
-arduino-cli lib install OneWire DallasTemperature WiFiManager@2.0.17
+arduino-cli lib install OneWire DallasTemperature WiFiManager@2.0.17 PubSubClient@2.8.0
 ```
 
 ### 4. Attach board and port to the sketch
@@ -225,7 +226,7 @@ esptool.py --port $PORT flash_id
 
 ### Change the fan curve
 
-Use the form on the [status page](#status-page): duty ramps linearly from the low % at the low temperature to the high % at the high temperature, and is clamped outside that range. **Save** applies it on the next 1 s cycle and stores it in flash, so it survives reboots. **Defaults** restores the values compiled into the firmware.
+Use the form on the [status page](#status-page), or [MQTT](#mqtt): duty ramps linearly from the low % at the low temperature to the high % at the high temperature, and is clamped outside that range. **Save** applies it on the next 1 s cycle and stores it in flash, so it survives reboots. **Defaults** restores the values compiled into the firmware.
 
 | Field | Default | Allowed |
 |---|---|---|
@@ -266,7 +267,7 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access point (needs [mDNS on your PC](#5-resolve-local-names)), or the IP from serial. The page title and footer show the board's name. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`.
+Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access point (needs [mDNS on your PC](#5-resolve-local-names)), or the IP from serial. The page title and footer show the board's name. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, the [MQTT](#mqtt) broker settings, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`.
 
 **The graph:**
 - Temperature (red, left °C axis) and duty (blue, right % axis), as 10-second averages.
@@ -295,10 +296,66 @@ The footer shows what's running, e.g. `Firmware v0.0.1 · 37454aa`:
 
 The timeouts are `CONNECT_TIMEOUT_S` and `PORTAL_TIMEOUT_S` at the top of `fan_controller.ino`.
 
+### MQTT
+
+The board can publish its fan curve and readings to an MQTT broker and take curve changes from it. It stays off until you enter a broker.
+
+**Setup.** On the [status page](#status-page), open **MQTT** and enter the broker's IP or DNS name and port (1883 by default). If the broker needs a login, add the user and password. Then press **Save**. The section's title shows the state: `connected`, `not connected (state N)` or `off`. Serial also prints `MQTT: connected to …`. To switch MQTT off, clear the broker field and save.
+
+- **Use an IP or a DNS name.** A `.local` name doesn't work, because the ESP8266 can't resolve mDNS names when it connects out.
+- **Password field:** leave it blank to keep the saved password. That only works while the broker and the user stay the same. If you change either, enter the password again, so the old password is never sent to a new broker. Clearing the user removes both.
+- **Broker unreachable:** the board tries again after 30 s and doubles the wait after each failure, up to 5 min (`MQTT_RETRY_MIN_S` / `MQTT_RETRY_MAX_S`). Each try can freeze the status page for up to about 6 s. The fans keep running normally. Saving the MQTT form tries again at once, and so does a connection that drops after it was working.
+
+**Topics.** Every topic starts with the board's name, the same `fan-controller-XXXXXX` as on the status page:
+
+| Topic | Direction | Payload |
+|---|---|---|
+| `…/ramp` | from the board, retained | `{"low":21,"high":30}`: ramp start and end, °C |
+| `…/ramp/set` | to the board | `{"low":22,"high":32}`, or one key alone: `{"low":22}` |
+| `…/duty` | from the board, retained | `{"min":20,"max":100}`: duty at ramp start and end, % |
+| `…/duty/set` | to the board | `{"max":80}` etc. |
+| `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The same JSON as [`/status.json`](#status-page): `{"t":22.7,"pct":40,"pwr":1,"rpm":[600,630,750]}` |
+| `…/online` | from the board, retained | `online`, or `offline` once the board drops off (the broker sends it for the board) |
+
+`ramp` and `duty` are the two rows of the [fan curve](#change-the-fan-curve) form.
+
+**How a set works:**
+- **Keys:** a set can carry one key or both. A missing key keeps its current value. Values must be whole numbers.
+- **Applied like Save:** the board treats a set exactly like **Save** on the page. The same limits apply, the change takes effect on the next 1 s cycle, and it is stored in flash.
+- **Rejected sets:** the board ignores the whole set if any of these is true, and serial prints `MQTT: ignored …`:
+  - the result breaks the limits;
+  - any key's value isn't a whole number, such as `99.9` or `"32"`;
+  - the payload is longer than 127 bytes.
+- **Both cases:** the board republishes `ramp` and `duty`, so they always show the curve in force.
+
+**Examples.** `mosquitto_sub` and `mosquitto_pub` come with the `mosquitto` package. Add `-u <user> -P <password>` if the broker needs a login.
+
+```bash
+mosquitto_sub -h <broker> -t 'fan-controller-XXXXXX/#' -v      # watch everything
+mosquitto_pub -h <broker> -t fan-controller-XXXXXX/ramp/set -m '{"low":22,"high":32}'
+mosquitto_pub -h <broker> -t fan-controller-XXXXXX/duty/set -m '{"max":80}'
+```
+
+- **Don't publish sets as retained.** The broker would resend them every time the board reconnects, overwriting any change made on the page since.
+- **Don't automate sets every few seconds.** Each accepted set that changes the curve rewrites the board's flash. Changes by hand, or an occasional automation, are fine. A set that changes nothing writes nothing.
+
+**Test broker.** If you don't have a broker, `mqtt-broker/` builds a throwaway Mosquitto 2.0.22 in Docker. It uses plain TCP and keeps nothing between runs, retained messages included.
+
+```bash
+docker build -t fan-mqtt mqtt-broker
+docker run --rm --name fan-mqtt -p 1883:1883 fan-mqtt                                     # no login
+docker run --rm --name fan-mqtt -p 1883:1883 -e MQTT_USER=fan -e MQTT_PASS=secret fan-mqtt   # or: login required
+docker exec fan-mqtt mosquitto_sub -t 'fan-controller-XXXXXX/#' -v                        # watch; add -u fan -P secret with a login
+docker exec fan-mqtt mosquitto_pub -t fan-controller-XXXXXX/duty/set -m '{"max":80}'
+```
+
+On the status page, enter your PC's LAN IP as the broker (`ip -4 addr`), not `localhost`. The board connects to the PC from outside, so a firewall on the PC must allow TCP 1883. The `docker run` window logs each connection, e.g. `New client connected … as fan-controller-XXXXXX`, and each refused login (`not authorised`). Ctrl+C stops the broker.
+
 ### Security
 
 - `AP_PASS` is committed in the source, so change it before flashing if the repo is shared. It must be at least 8 characters.
 - The status and Wi-Fi pages on your LAN have no login. Anyone on your network can open them, change the fan curve, change or erase the Wi-Fi settings, and flash new firmware.
+- MQTT is plain TCP, without TLS, and the broker password is stored unencrypted in the board's flash. Anyone who can publish to the broker can change the fan curve.
 
 ---
 
@@ -334,6 +391,9 @@ arduino-cli version
 | Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
 | `fan-controller-XXXXXX.local` doesn't resolve | Check the chip ID first: `avahi-browse -rt _http._tcp` or your router's DHCP list shows each board's name. Otherwise `avahi-daemon` usually isn't running (`systemctl is-active avahi-daemon`). See [Setup step 5](#5-resolve-local-names). If it runs and still fails, a firewall may be blocking UDP 5353. Or use the IP from serial |
 | Changed `DEFAULT_CURVE` and flashed, but the curve didn't change | A curve saved from the status page takes priority over the compiled defaults. Press **Defaults** on the page |
+| MQTT says `not connected (state -2)` or `(state -4)` | The board can't reach the broker, or it didn't answer in time. Check the IP and port, that the broker is running, and that no firewall blocks the port (1883). A `.local` broker name never works here: use the IP |
+| MQTT says `not connected (state 4)` or `(state 5)` | The broker refused the login. Re-enter the user and password (the password field is always shown blank) |
+| An MQTT set changes nothing | Serial prints `MQTT: ignored …`. The values broke the [curve limits](#change-the-fan-curve), a value isn't a whole number, or the payload isn't JSON like `{"low":22}`. To move the ramp start past its current end, send both in one message: `{"low":35,"high":40}` |
 | Status page unreachable after changing network | The board couldn't join the new network (wrong password, or out of range). Press RST: if the saved network still can't be reached, it falls back to the setup access point after 20 s |
 
 ---

@@ -3,6 +3,7 @@
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
 #include <WiFiManager.h>
+#include <PubSubClient.h>
 
 // ---- Firmware ----
 const char *FW_VERSION = "0.0.2";          // bump by hand on release
@@ -31,6 +32,14 @@ char hostname[24];                         // fan-controller-<chip id>: DHCP, ht
 const char *AP_PASS  = "fancontrol";       // setup AP password, min 8 chars; change before flashing
 const int CONNECT_TIMEOUT_S = 20, PORTAL_TIMEOUT_S = 180;  // s: router join attempt (fans 100 %) / setup AP lifetime before retry
 
+// ---- MQTT (broker set on the status page; topics under <hostname>/) ----
+struct MqttCfg { char host[64]; uint16_t port; char user[32], pass[64]; };
+const MqttCfg DEFAULT_MQTT = {"", 1883, "", ""};   // blank host = MQTT off
+const int MQTT_STATUS_S = 5;               // s between status publishes
+const uint32_t MQTT_RETRY_MIN_S = 30, MQTT_RETRY_MAX_S = 300;   // failed connects back off from 30 s to 5 min
+MqttCfg mqttCfg = DEFAULT_MQTT;
+uint32_t mqttLastTry, mqttRetryS;          // millis() of the last connect attempt / s to wait after it; 0 = try now
+
 // ---- Tach counting ----
 volatile uint32_t pulses[3];
 void IRAM_ATTR t0() { pulses[0]++; }
@@ -41,6 +50,8 @@ void (*isr[3])() = {t0, t1, t2};
 OneWire oneWire(ONEWIRE_PIN);
 DallasTemperature sensors(&oneWire);
 WiFiManager wm;
+WiFiClient net;
+PubSubClient mqtt(net);
 
 // ---- Last readings, served by the web page ----
 float lastTemp = DEVICE_DISCONNECTED_C;
@@ -79,9 +90,13 @@ bool doubleReset() {                       // RST pressed again within the windo
     return m == DRD_MAGIC && ESP.getResetInfoPtr()->reason == REASON_EXT_SYS_RST;
 }
 
-// ---- Saved curve (EEPROM = one flash sector, written only on Save) ----
+// ---- Saved curve and broker (EEPROM = one flash sector, written only on Save) ----
 const uint32_t CURVE_MAGIC = 0xC0FE0001;   // bump when Curve changes layout
 struct Saved { uint32_t magic; Curve c; };
+const uint32_t MQTT_MAGIC = 0x4D515401;    // bump when MqttCfg changes layout
+struct SavedMqtt { uint32_t magic; MqttCfg m; };
+const int MQTT_AT = 64;                    // EEPROM offset of SavedMqtt: fixed, so a Curve change can't move it
+static_assert(sizeof(Saved) <= MQTT_AT, "curve record overlaps the broker record");
 
 // tLow < tHigh also keeps map() from dividing by zero; pctMax > 0 keeps a 0 → 0 % curve from
 // cutting the fans' 12 V at every temperature
@@ -91,7 +106,6 @@ bool validCurve(const Curve &c) {
 }
 
 void loadCurve() {
-    EEPROM.begin(sizeof(Saved));
     Saved s;
     EEPROM.get(0, s);
     curve = (s.magic == CURVE_MAGIC && validCurve(s.c)) ? s.c : DEFAULT_CURVE;
@@ -104,6 +118,28 @@ void saveCurve() {
 
 void printCurve() {
     Serial.printf("Curve: %d-%d °C -> %d-%d %%\n", curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax);
+}
+
+void loadMqtt() {
+    SavedMqtt s;
+    EEPROM.get(MQTT_AT, s);
+    if (s.magic != MQTT_MAGIC) return;     // never saved: DEFAULT_MQTT, off
+    mqttCfg = s.m;
+    mqttCfg.host[sizeof mqttCfg.host - 1] = mqttCfg.user[sizeof mqttCfg.user - 1] = mqttCfg.pass[sizeof mqttCfg.pass - 1] = 0;
+}
+
+void saveMqtt() {
+    SavedMqtt s;
+    memset(&s, 0, sizeof s);               // padding too, so an unchanged Save compares equal and writes nothing
+    s.magic = MQTT_MAGIC;
+    s.m = mqttCfg;
+    EEPROM.put(MQTT_AT, s);
+    EEPROM.commit();
+}
+
+void printMqtt() {
+    if (mqttCfg.host[0]) Serial.printf("MQTT: %s:%u%s\n", mqttCfg.host, mqttCfg.port, mqttCfg.user[0] ? " with login" : "");
+    else Serial.println("MQTT: off");
 }
 
 int curvePct(float t) {                    // whole degrees; the core's map() rounds
@@ -131,13 +167,114 @@ void setFanPower(float t, int pct) {       // called once per 1 s cycle
     digitalWrite(POWER_PIN, fanPower ? HIGH : LOW);
 }
 
-// Main page = PAGE_HEAD + hostname (the title) + PAGE_TOP + snprintf'd form/footer + PAGE_SCRIPT,
-// streamed. '%' is literal in the PROGMEM parts; only the snprintf part needs '%%'.
+void statusJson(char *buf, size_t n) {     // the live numbers, for /status.json and MQTT
+    char t[12] = "null";                   // sensor missing
+    if (lastTemp != DEVICE_DISCONNECTED_C) snprintf(t, sizeof t, "%.1f", lastTemp);
+    snprintf(buf, n, "{\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u]}",
+        t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2]);
+}
+
+// ---- MQTT: <hostname>/ramp and /duty (retained; set via .../set), /status, /online ----
+const char *topic(const char *leaf) {      // <hostname>/<leaf>, in a static buffer
+    static char t[48];
+    snprintf(t, sizeof t, "%s/%s", hostname, leaf);
+    return t;
+}
+
+void publishCurve() {                      // the curve in force
+    char m[32];
+    snprintf(m, sizeof m, "{\"low\":%d,\"high\":%d}", curve.tLow, curve.tHigh);
+    mqtt.publish(topic("ramp"), m, true);
+    snprintf(m, sizeof m, "{\"min\":%d,\"max\":%d}", curve.pctMin, curve.pctMax);
+    mqtt.publish(topic("duty"), m, true);
+}
+
+void applyCurve(const Curve &c) {          // a valid curve from the page or MQTT; used from the next cycle
+    curve = c;
+    saveCurve();
+    printCurve();
+    publishCurve();
+}
+
+void publishStatus() {                     // not retained, so stale numbers never look live
+    if (!WiFi.isConnected()) return;       // a dead link's socket still looks connected, and writing to it blocks
+    char m[96];
+    statusJson(m, sizeof m);
+    mqtt.publish(topic("status"), m);
+}
+
+// "key":<whole number> in a small flat JSON object: 1 = read into v, 0 = key absent,
+// -1 = key present but its value isn't a whole number (a fraction, a string, junk)
+int jsonInt(const char *s, const char *key, int &v) {
+    char k[16];
+    snprintf(k, sizeof k, "\"%s\"", key);
+    const char *p = strstr(s, k);
+    if (!p) return 0;
+    for (p += strlen(k); isspace((unsigned char)*p); p++) {}
+    if (*p++ != ':') return -1;
+    char *end;
+    long x = strtol(p, &end, 10);          // skips leading whitespace itself
+    if (end == p) return -1;
+    while (isspace((unsigned char)*end)) end++;
+    if (*end != ',' && *end != '}') return -1;
+    v = x;
+    return 1;
+}
+
+// <hostname>/ramp/set or /duty/set: merge the keys given into the curve, then the same checks and
+// save as the page's form. All or nothing: one bad key rejects the whole set. The state topics are
+// republished either way, so they show what is in force.
+void onMqtt(char *t, uint8_t *payload, unsigned len) {
+    char msg[128];                         // copy first: publishing reuses the library's buffer
+    bool fits = len < sizeof msg;          // a longer one is rejected, not cut
+    len = min(len, sizeof msg - 1);
+    memcpy(msg, payload, len);
+    msg[len] = 0;
+    Curve c = curve;
+    bool ramp = !strcmp(t + strlen(hostname), "/ramp/set");
+    int a = ramp ? jsonInt(msg, "low", c.tLow) : jsonInt(msg, "min", c.pctMin);
+    int b = ramp ? jsonInt(msg, "high", c.tHigh) : jsonInt(msg, "max", c.pctMax);
+    if (fits && a >= 0 && b >= 0 && a + b > 0 && validCurve(c)) {
+        applyCurve(c);
+    } else {
+        Serial.printf("MQTT: ignored %s %s\n", t, msg);
+        publishCurve();
+    }
+}
+
+bool mqttConnect() {
+    mqtt.setServer(mqttCfg.host, mqttCfg.port);
+    const char *user = mqttCfg.user[0] ? mqttCfg.user : nullptr;
+    const char *pass = user && mqttCfg.pass[0] ? mqttCfg.pass : nullptr;
+    if (!mqtt.connect(hostname, user, pass, topic("online"), 0, true, "offline")) {
+        Serial.printf("MQTT: %s:%u failed, state %d\n", mqttCfg.host, mqttCfg.port, mqtt.state());
+        return false;
+    }
+    Serial.printf("MQTT: connected to %s:%u\n", mqttCfg.host, mqttCfg.port);
+    mqtt.publish(topic("online"), "online", true);
+    mqtt.subscribe(topic("ramp/set"));
+    mqtt.subscribe(topic("duty/set"));
+    publishCurve();
+    return true;
+}
+
+// Every loop() pass: keepalive, incoming sets, reconnects. A connect blocks for up to ~6 s, so failed
+// tries back off from MQTT_RETRY_MIN_S to MQTT_RETRY_MAX_S; a drop after a good connection retries at
+// once. The wait is an unsigned millis() difference, so it survives the 49-day wrap.
+void mqttProcess() {
+    if (!mqttCfg.host[0] || !WiFi.isConnected() || mqtt.loop()) return;   // loop() is false while disconnected
+    if (mqttRetryS && millis() - mqttLastTry < mqttRetryS * 1000) return;
+    mqttLastTry = millis();
+    mqttRetryS = mqttConnect() ? 0 : constrain(mqttRetryS * 2, MQTT_RETRY_MIN_S, MQTT_RETRY_MAX_S);
+}
+
+// Main page = PAGE_HEAD + hostname (the title) + PAGE_TOP + snprintf'd curve form, broker form and
+// footer + PAGE_SCRIPT, streamed. '%' is literal in the PROGMEM parts; only the snprintf part needs '%%'.
 const char PAGE_HEAD[] PROGMEM = R"HTML(<!DOCTYPE html><meta charset=utf-8>
 <meta name=viewport content='width=device-width'><title>)HTML";
 
 const char PAGE_TOP[] PROGMEM = R"HTML(</title>
-<style>input{width:4em}canvas{display:block;width:100%;max-width:720px;height:220px}
+<style>input{width:4em}.w{width:10em}canvas{display:block;width:100%;max-width:720px;height:220px}
 .k{display:inline-block;width:1.2em;height:3px;vertical-align:middle}</style>
 <h2 id=st>…</h2><p id=fans>
 <p><span class=k style=background:#e4572e></span> Temperature °C &nbsp;
@@ -184,23 +321,36 @@ void handleRoot() {                        // status and graph are filled in by 
         wm.server->send(302);
         return;
     }
-    char form[768];
-    snprintf(form, sizeof form,
-        "<form method=post action=/curve><p>"
-        "Ramp <input name=tl type=number min=0 max=100 required value=%d> → "
-        "<input name=th type=number min=0 max=100 required value=%d> °C<br>"
-        "Duty <input name=pl type=number min=0 max=100 required value=%d> → "
-        "<input name=ph type=number min=1 max=100 required value=%d> %%"
-        "<p><button>Save</button> <button name=reset value=1 formnovalidate>Defaults</button></form>"
-        "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
-        "<p style=color:gray><small>%s · Firmware v%s · %s</small>",
-        curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax, hostname, FW_VERSION, GIT_HASH);
     wm.server->setContentLength(CONTENT_LENGTH_UNKNOWN);   // chunked on HTTP/1.1
     wm.server->send(200, "text/html; charset=utf-8", "");
     wm.server->sendContent_P(PAGE_HEAD);
     wm.server->sendContent(hostname);
     wm.server->sendContent_P(PAGE_TOP);
-    wm.server->sendContent(form);
+    char buf[1024];                        // the curve form, then the broker form + footer
+    snprintf(buf, sizeof buf,
+        "<form method=post action=/curve><p>"
+        "Ramp <input name=tl type=number min=0 max=100 required value=%d> → "
+        "<input name=th type=number min=0 max=100 required value=%d> °C<br>"
+        "Duty <input name=pl type=number min=0 max=100 required value=%d> → "
+        "<input name=ph type=number min=1 max=100 required value=%d> %%"
+        "<p><button>Save</button> <button name=reset value=1 formnovalidate>Defaults</button></form>",
+        curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax);
+    wm.server->sendContent(buf);
+    char state[32] = "off";
+    if (mqttCfg.host[0] && mqtt.connected()) strcpy(state, "connected");
+    else if (mqttCfg.host[0]) snprintf(state, sizeof state, "not connected (state %d)", mqtt.state());
+    snprintf(buf, sizeof buf,
+        "<details><summary>MQTT · %s</summary><form method=post action=/mqtt><p>"
+        "Broker <input name=host class=w maxlength=63 placeholder='IP or DNS name' value='%s'> : "
+        "<input name=port type=number min=1 max=65535 required value=%u><br>"
+        "User <input name=user class=w maxlength=31 value='%s'> "
+        "Password <input name=pass class=w type=password maxlength=63 placeholder=unchanged><br>"
+        "<small style=color:gray>Blank broker = off. Topics: %s/ramp, /duty (set via …/set), /status, /online</small>"
+        "<p><button>Save</button></form></details>"
+        "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
+        "<p style=color:gray><small>%s · Firmware v%s · %s</small>",
+        state, mqttCfg.host, mqttCfg.port, mqttCfg.user, hostname, hostname, FW_VERSION, GIT_HASH);
+    wm.server->sendContent(buf);
     wm.server->sendContent_P(PAGE_SCRIPT);
 }
 
@@ -227,11 +377,8 @@ void handleHistory() {                     // ~3.3 KB when full, so streamed in 
 }
 
 void handleStatus() {
-    char t[12] = "null";                   // sensor missing
-    if (lastTemp != DEVICE_DISCONNECTED_C) snprintf(t, sizeof t, "%.1f", lastTemp);
     char json[96];
-    snprintf(json, sizeof json, "{\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u]}",
-        t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2]);
+    statusJson(json, sizeof json);
     wm.server->send(200, "application/json", json);
 }
 
@@ -246,11 +393,45 @@ void handleCurve() {                       // form POST: validate, apply, save, 
             return;
         }
     }
-    curve = c;
-    saveCurve();
-    printCurve();
+    applyCurve(c);
     wm.server->sendHeader("Location", "/");
     wm.server->send(303);
+}
+
+// Broker form POST. Host and user are echoed into value='…', so they are limited to safe characters.
+// A blank password keeps the saved one, but only for the same host and user, so a changed host never
+// gets the old password; a blank user drops both.
+void handleMqtt() {
+    auto &s = *wm.server;
+    String host = s.arg("host"), user = s.arg("user"), pass = s.arg("pass");
+    host.trim();
+    user.trim();
+    long port = s.arg("port").toInt();
+    bool ok = host.length() < sizeof mqttCfg.host && user.length() < sizeof mqttCfg.user
+           && pass.length() < sizeof mqttCfg.pass && 0 < port && port <= 65535;
+    for (char ch : host) ok &= isalnum(ch) || ch == '.' || ch == '-';
+    for (char ch : user) ok &= !strchr("'\"<>&", ch);
+    if (!ok) {
+        s.send(400, "text/html; charset=utf-8",
+            "<meta charset=utf-8>Need a broker IP or DNS name (letters, digits, . and -), port 1–65535, "
+            "and a user without ' \" &lt; &gt; &amp;. <a href=/>Back</a>");
+        return;
+    }
+    if (!user.length()) pass = "";
+    else if (!pass.length() && host == mqttCfg.host && user == mqttCfg.user) pass = mqttCfg.pass;
+    if (mqtt.connected()) {                // a clean disconnect skips the last will, so say it ourselves
+        mqtt.publish(topic("online"), "offline", true);
+        mqtt.disconnect();
+    }
+    strncpy(mqttCfg.host, host.c_str(), sizeof mqttCfg.host);   // strncpy zero-fills the rest, so no
+    strncpy(mqttCfg.user, user.c_str(), sizeof mqttCfg.user);   // tail of an older, longer value stays
+    strncpy(mqttCfg.pass, pass.c_str(), sizeof mqttCfg.pass);   // in flash; lengths are checked above
+    mqttCfg.port = port;
+    saveMqtt();
+    printMqtt();
+    mqttRetryS = 0;                        // connect on the next pass
+    s.sendHeader("Location", "/");
+    s.send(303);
 }
 
 // Goes into the <head> of WiFiManager's own pages. Its OTA result page (/u) has no link back and
@@ -267,6 +448,7 @@ void addRoutes() {                         // runs before WiFiManager adds its r
     wm.server->on("/status.json", handleStatus);   // not /status: WiFiManager has one
     wm.server->on("/history.json", handleHistory);
     wm.server->on("/curve", HTTP_POST, handleCurve);
+    wm.server->on("/mqtt", HTTP_POST, handleMqtt);
 }
 
 void startLan() {                          // joined the router: serve the pages there
@@ -289,8 +471,14 @@ void setup() {
         setFan(i, PCT_FAILSAFE);
     }
 
+    EEPROM.begin(MQTT_AT + sizeof(SavedMqtt));   // curve at 0, broker at MQTT_AT
     loadCurve();
     printCurve();
+    loadMqtt();
+    printMqtt();
+    net.setTimeout(2000);                    // ms for DNS and TCP connect (5 s each by default) and...
+    mqtt.setSocketTimeout(2);                // ...s for the broker's reply (15): a dead broker stalls the loop ~6 s per try
+    mqtt.setCallback(onMqtt);
 
     sensors.begin();
     sensors.setWaitForConversion(false);     // non-blocking conversions
@@ -320,6 +508,7 @@ void loop() {
     wm.process();                            // setup AP / LAN pages, every pass
     MDNS.update();
     if (WiFi.isConnected() && !wm.getWebPortalActive() && !wm.getConfigPortalActive()) startLan();
+    mqttProcess();
     if (drdArmed && millis() > DRD_WINDOW_MS) { drdWrite(0); drdArmed = false; }
 
     static uint32_t last = millis();
@@ -349,4 +538,7 @@ void loop() {
         Serial.printf(" Fan%d %u RPM", i + 1, (unsigned)lastRpm[i]);
     }
     Serial.println();
+
+    static int cycles;
+    if (++cycles % MQTT_STATUS_S == 0) publishStatus();   // no-op while disconnected
 }
