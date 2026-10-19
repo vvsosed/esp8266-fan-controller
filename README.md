@@ -267,7 +267,7 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access point (needs [mDNS on your PC](#5-resolve-local-names)), or the IP from serial. The page title and footer show the board's name. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, the [MQTT](#mqtt) broker settings, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`.
+Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access point (needs [mDNS on your PC](#5-resolve-local-names)), or the IP from serial. The page title and footer show the board's name. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, the [MQTT](#mqtt) broker settings, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`. The last line shows the [uptime, boots and crashes](#uptime-boots-and-crashes).
 
 **The graph:**
 - Temperature (red, left °C axis) and duty (blue, right % axis), as 10-second averages.
@@ -279,7 +279,7 @@ Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access po
 | Page | Use |
 |---|---|
 | `/history.json` | The graph data, oldest first: `{"step":10,"tl":21,"th":30,"t":[21.3,null,…],"d":[20,100,…]}` (`null` = no reading in that interval) |
-| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"pwr":1,"rpm":[600,630,660]}` (`t` is `null` when the sensor is missing; `pwr` is 0 while the fans' 12 V is off) |
+| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"pwr":1,"rpm":[600,630,660],"up":273600,"boots":14,"crashes":1,"reset":"power on"}` (`t` is `null` when the sensor is missing; `pwr` is 0 while the fans' 12 V is off; the rest is [uptime, boots and crashes](#uptime-boots-and-crashes)) |
 | `/wifi` | Switch to a different network |
 | `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
 | `/update` | Upload new firmware ([Flash over Wi-Fi](#flash-over-wi-fi-from-the-browser)) |
@@ -288,6 +288,38 @@ The footer shows what's running, e.g. `Firmware v0.0.1 · 37454aa`:
 
 - **The version** is `FW_VERSION` at the top of `fan_controller.ino`. Bump it by hand when you release.
 - **The commit** comes from `./build.sh`. A `-dirty` suffix means the build included uncommitted changes. To show a clean hash, commit first and then flash.
+
+### Uptime, boots and crashes
+
+To watch how stable the board is, the status page's last line shows e.g. `Up 3 d 04:12 · boots 14 · crashes 1 · last reset: power on`. [`/status.json`](#status-page) and the [MQTT](#mqtt) `status` topic carry the same as `up` (seconds since this start), `boots`, `crashes` and `reset`. Serial prints them at boot: `Boot 14, 1 crashes; this one: power on`.
+
+- **boots** counts every start, this one included: power-ons, resets, firmware updates and crashes. Counting begins with the first firmware that has the counter. Only [erasing the flash completely](#erase-the-flash-completely) sets it back to 0.
+- **crashes** counts the starts that followed a crash. This is the number to watch.
+- **last reset** says why this start happened:
+
+| `reset` | Cause |
+|---|---|
+| `power on` | The board got power. One that nobody caused means the supply dropped out |
+| `reset pin` | The RST button, or a USB serial upload |
+| `restart` | The firmware restarted itself: after a [firmware update over Wi-Fi](#flash-over-wi-fi-from-the-browser), when the setup access point [timed out](#getting-back-into-setup), or after **Erase WiFi config** |
+| `exception` | Crash: the program hit a CPU exception, e.g. a bad pointer |
+| `software watchdog`, `hardware watchdog` | Crash: the program got stuck |
+| `panic` | Crash: abort, failed assert, or out of memory |
+
+**Where the count is kept.** Each start adds a small record to a log in two flash sectors of their own, at the end of the 2 MB filesystem area. This firmware has no filesystem, and firmware updates don't write there. The fan curve and broker settings live elsewhere and are still written only when you save them.
+
+- **Wear:** a record goes into erased flash, so most starts erase nothing. A sector is erased once every 341 starts. Even a crash every 5 s would erase each sector only about once an hour, years before typical flash (100,000 erases) wears out.
+- **Power cuts:** a power cut while a record is being written loses that one start, nothing more.
+- **Other flash layouts:** the counter needs the board's default layout, `4MB (FS:2MB …)`. Built with `FS:none`, it shows only the current start (`boots 1`), and serial says `Boot counter off`. If you ever add a filesystem to this firmware, keep it clear of its last two sectors.
+
+**Watching it over MQTT.** A rising `crashes` means a crash; a falling `up` or a rising `boots` means some restart.
+
+**Finding the cause of a crash.** Serial prints the crash before the board restarts: `Exception (n)`, `Soft WDT reset`, `Panic …` or `Abort called`, then a stack dump between `>>>stack>>>` and `<<<stack<<<`. Turn the code addresses (`40xxxxxx`) into source lines with the `.elf` of the same build (`./build.sh -e` exports it):
+
+```bash
+~/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/*/bin/xtensa-lx106-elf-addr2line -pfiaC \
+  -e build/esp8266.esp8266.d1_mini/fan_controller.ino.elf 0x40201588 0x40203f2c   # addresses from the dump
+```
 
 ### Getting back into setup
 
@@ -314,7 +346,7 @@ The board can publish its fan curve and readings to an MQTT broker and take curv
 | `…/ramp/set` | to the board | `{"low":22,"high":32}`, or one key alone: `{"low":22}` |
 | `…/duty` | from the board, retained | `{"min":20,"max":100}`: duty at ramp start and end, % |
 | `…/duty/set` | to the board | `{"max":80}` etc. |
-| `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The same JSON as [`/status.json`](#status-page): `{"t":22.7,"pct":40,"pwr":1,"rpm":[600,630,750]}` |
+| `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The same JSON as [`/status.json`](#status-page): `{"t":22.7,"pct":40,"pwr":1,"rpm":[600,630,750],"up":273600,"boots":14,"crashes":1,"reset":"power on"}` |
 | `…/online` | from the board, retained | `online`, or `offline` once the board drops off (the broker sends it for the board) |
 
 `ramp` and `duty` are the two rows of the [fan curve](#change-the-fan-curve) form.
@@ -389,6 +421,8 @@ arduino-cli version
 | A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching a transistor collector (fan pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
 | Wi-Fi flaky or won't connect | A tach pin shorted to PWM (row above) fires 25,000 interrupts per second and starves Wi-Fi. Fix that first |
 | Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
+| `crashes` keeps going up | Leave a serial monitor running until it happens again, then [decode the stack dump](#uptime-boots-and-crashes). A `hardware watchdog` crash prints no dump |
+| `last reset: power on`, but nobody switched it off | The board lost power. Check its 5 V supply and USB cable |
 | `fan-controller-XXXXXX.local` doesn't resolve | Check the chip ID first: `avahi-browse -rt _http._tcp` or your router's DHCP list shows each board's name. Otherwise `avahi-daemon` usually isn't running (`systemctl is-active avahi-daemon`). See [Setup step 5](#5-resolve-local-names). If it runs and still fails, a firewall may be blocking UDP 5353. Or use the IP from serial |
 | Changed `DEFAULT_CURVE` and flashed, but the curve didn't change | A curve saved from the status page takes priority over the compiled defaults. Press **Defaults** on the page |
 | MQTT says `not connected (state -2)` or `(state -4)` | The board can't reach the broker, or it didn't answer in time. Check the IP and port, that the broker is running, and that no firewall blocks the port (1883). A `.local` broker name never works here: use the IP |

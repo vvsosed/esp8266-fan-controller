@@ -1,6 +1,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <EEPROM.h>
+#include <flash_hal.h>                     // FS_PHYS_ADDR/SIZE: where the boot counter's log goes
 #include <ESP8266mDNS.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
@@ -39,6 +40,13 @@ const int MQTT_STATUS_S = 5;               // s between status publishes
 const uint32_t MQTT_RETRY_MIN_S = 30, MQTT_RETRY_MAX_S = 300;   // failed connects back off from 30 s to 5 min
 MqttCfg mqttCfg = DEFAULT_MQTT;
 uint32_t mqttLastTry, mqttRetryS;          // millis() of the last connect attempt / s to wait after it; 0 = try now
+
+// ---- Boot counter (see countBoot()) ----
+// BootRec is defined up here because the IDE inserts the sketch's function prototypes, some of which
+// take one, just above the tach ISRs below.
+struct BootRec { uint32_t boots, crashes, check; };   // one flash log record
+BootRec boots;                             // all boots counted, this one included
+const char *resetReason = "unknown";       // what started this boot
 
 // ---- Tach counting ----
 volatile uint32_t pulses[3];
@@ -142,6 +150,96 @@ void printMqtt() {
     else Serial.println("MQTT: off");
 }
 
+// ---- Boot counter, for watching stability ----
+// Each boot appends a record to a log in two flash sectors of its own: the last two of the filesystem
+// area, which this sketch doesn't use and an OTA update doesn't touch. A record goes into erased flash,
+// so it needs no erase; a sector is erased only when the other one is full, once per LOG_N boots. The
+// newest record is the valid one with the most boots in either sector, so a power cut during a write
+// or an erase loses that one boot at most. The curve/broker sector stays Save-only.
+const uint32_t BOOTS_MAGIC = 0xB0070002;   // bump when BootRec changes layout
+const int LOG_N = SPI_FLASH_SEC_SIZE / sizeof(BootRec);   // records per sector (341)
+const int CRASH_RTC = 32;                  // RTC block of CrashRtc: an OTA update overwrites blocks 0-31
+const uint32_t CRASH_MAGIC = 0xC7A5B007;   // RTC holds random bits after power-on
+struct CrashRtc { uint32_t reason, magic; };   // set by custom_crash_callback(), cleared at boot
+
+uint32_t logAddr(int sec, int i) {         // flash address of record i in log sector sec (0 or 1)
+    return FS_PHYS_ADDR + FS_PHYS_SIZE - (2 - sec) * SPI_FLASH_SEC_SIZE + i * sizeof(BootRec);
+}
+
+BootRec readRec(int sec, int i) {
+    BootRec b;
+    ESP.flashRead(logAddr(sec, i), (uint32_t *)&b, sizeof b);
+    return b;
+}
+
+// A torn write leaves some bits unprogrammed, in no set order. A plain XOR check would pass if the same
+// bit were missing from boots and check, so it is murmur3's finalizer: one changed bit flips about half.
+uint32_t recCheck(const BootRec &b) {
+    uint32_t h = b.boots * 0x9E3779B1 ^ b.crashes ^ BOOTS_MAGIC;
+    h ^= h >> 16; h *= 0x85EBCA6B;
+    h ^= h >> 13; h *= 0xC2B2AE35;
+    return h ^ h >> 16;
+}
+
+bool recErased(const BootRec &b) { return (b.boots & b.crashes & b.check) == 0xFFFFFFFF; }
+bool recValid(const BootRec &b) { return !recErased(b) && b.check == recCheck(b) && b.crashes <= b.boots; }
+
+// The core calls this on an exception, soft watchdog or panic, just before it restarts; the hardware
+// watchdog resets without it. It is the only sign of a panic (abort, failed assert, out of memory),
+// whose reset reason doesn't say crash. REASON_DEFAULT_RST here is the SDK restarting itself, not a
+// crash. Direct stores, not an SDK call: the program is already broken.
+extern "C" void custom_crash_callback(struct rst_info *ri, uint32_t, uint32_t) {
+    if (ri->reason == REASON_DEFAULT_RST) return;
+    RTC_USER_MEM[CRASH_RTC + offsetof(CrashRtc, reason) / 4] = ri->reason;
+    RTC_USER_MEM[CRASH_RTC + offsetof(CrashRtc, magic) / 4] = CRASH_MAGIC;
+}
+
+// Sets resetReason; true if this boot followed a crash. After an exception or soft watchdog the SDK
+// keeps reporting that reason for later plain restarts, so those count only with the crash handler's
+// record. The hardware watchdog skips the handler, so its reason alone counts.
+bool whyBoot() {
+    // shorter than ESP.getResetReason()'s "Software/System restart", "External System" etc.
+    static const char *const NAME[] = {"power on", "hardware watchdog", "exception", "software watchdog",
+                                       "restart", "deep-sleep wake", "reset pin"};   // by REASON_*
+    CrashRtc c;
+    ESP.rtcUserMemoryRead(CRASH_RTC, (uint32_t *)&c, sizeof c);
+    uint32_t crash = c.magic == CRASH_MAGIC ? c.reason : 0;   // the handler's reason; 0 = it didn't run
+    c = {0, 0};
+    ESP.rtcUserMemoryWrite(CRASH_RTC, (uint32_t *)&c, sizeof c);
+    uint32_t r = ESP.getResetInfoPtr()->reason;
+    if (crash) resetReason = crash <= REASON_SOFT_WDT_RST ? NAME[crash] : "panic";   // panics pass 253/254
+    else if (r == REASON_EXCEPTION_RST || r == REASON_SOFT_WDT_RST) resetReason = "restart";   // a stale reason
+    else resetReason = r < sizeof NAME / sizeof *NAME ? NAME[r] : "unknown";
+    return crash || r == REASON_WDT_RST;
+}
+
+void countBoot() {                         // in setup()
+    bool crash = whyBoot();
+    if (FS_PHYS_SIZE < 2 * SPI_FLASH_SEC_SIZE) {   // a flash layout without a filesystem area
+        boots = {1, crash, 0};
+        Serial.printf("Boot counter off (no filesystem area); this boot: %s\n", resetReason);
+        return;
+    }
+    BootRec last = {0, 0, 0};              // newest record so far; none: start in sector 0
+    int sec = 0, at = -1;
+    for (int s = 0; s < 2; s++)
+        for (int i = 0; i < LOG_N; i++) {
+            BootRec b = readRec(s, i);
+            if (recValid(b) && b.boots > last.boots) { last = b; sec = s; at = i; }
+        }
+    int next = at + 1;                     // first erased slot after it; a torn write leaves one that isn't
+    while (next < LOG_N && !recErased(readRec(sec, next))) next++;
+    if (next == LOG_N) {                   // full: move to the other sector
+        sec ^= 1;
+        next = 0;
+        ESP.flashEraseSector(logAddr(sec, 0) / SPI_FLASH_SEC_SIZE);
+    }
+    boots = {last.boots + 1, last.crashes + crash, 0};
+    boots.check = recCheck(boots);
+    if (!ESP.flashWrite(logAddr(sec, next), (uint32_t *)&boots, sizeof boots)) Serial.println("Boot counter: flash write failed");
+    Serial.printf("Boot %u, %u crashes; this one: %s\n", (unsigned)boots.boots, (unsigned)boots.crashes, resetReason);
+}
+
 int curvePct(float t) {                    // whole degrees; the core's map() rounds
     long p = map((long)t, curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax);   // constrain() is a macro that
     return constrain(p, curve.pctMin, curve.pctMax);                              // would run map() up to 3 times
@@ -167,11 +265,13 @@ void setFanPower(float t, int pct) {       // called once per 1 s cycle
     digitalWrite(POWER_PIN, fanPower ? HIGH : LOW);
 }
 
-void statusJson(char *buf, size_t n) {     // the live numbers, for /status.json and MQTT
+const int STATUS_N = 192;                  // statusJson() buffer; its worst case is 155 bytes with the NUL
+void statusJson(char *buf, size_t n) {     // the live numbers, uptime (s) and boots, for /status.json and MQTT
     char t[12] = "null";                   // sensor missing
     if (lastTemp != DEVICE_DISCONNECTED_C) snprintf(t, sizeof t, "%.1f", lastTemp);
-    snprintf(buf, n, "{\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u]}",
-        t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2]);
+    snprintf(buf, n, "{\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u],\"up\":%u,\"boots\":%u,\"crashes\":%u,\"reset\":\"%s\"}",
+        t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2],
+        (unsigned)(micros64() / 1000000), (unsigned)boots.boots, (unsigned)boots.crashes, resetReason);
 }
 
 // ---- MQTT: <hostname>/ramp and /duty (retained; set via .../set), /status, /online ----
@@ -198,7 +298,7 @@ void applyCurve(const Curve &c) {          // a valid curve from the page or MQT
 
 void publishStatus() {                     // not retained, so stale numbers never look live
     if (!WiFi.isConnected()) return;       // a dead link's socket still looks connected, and writing to it blocks
-    char m[96];
+    char m[STATUS_N];
     statusJson(m, sizeof m);
     mqtt.publish(topic("status"), m);
 }
@@ -286,7 +386,9 @@ const char PAGE_TOP[] PROGMEM = R"HTML(</title>
 const char PAGE_SCRIPT[] PROGMEM = R"JS(<script>
 function u(){fetch('/status.json').then(r=>r.json()).then(d=>{
  st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %'+(d.pwr?'':' · fans off');
- fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>')})}
+ fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>');
+ up.textContent='Up '+(d.up>=86400?Math.floor(d.up/86400)+' d ':'')+new Date(d.up*1e3).toISOString().slice(11,16)
+  +' · boots '+d.boots+' · crashes '+d.crashes+' · last reset: '+d.reset})}
 let H;
 function g(){fetch('/history.json').then(r=>r.json()).then(h=>{H=h;draw()})}
 function draw(){
@@ -348,7 +450,7 @@ void handleRoot() {                        // status and graph are filled in by 
         "<small style=color:gray>Blank broker = off. Topics: %s/ramp, /duty (set via …/set), /status, /online</small>"
         "<p><button>Save</button></form></details>"
         "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
-        "<p style=color:gray><small>%s · Firmware v%s · %s</small>",
+        "<p style=color:gray><small>%s · Firmware v%s · %s<br><span id=up></span></small>",
         state, mqttCfg.host, mqttCfg.port, mqttCfg.user, hostname, hostname, FW_VERSION, GIT_HASH);
     wm.server->sendContent(buf);
     wm.server->sendContent_P(PAGE_SCRIPT);
@@ -377,7 +479,7 @@ void handleHistory() {                     // ~3.3 KB when full, so streamed in 
 }
 
 void handleStatus() {
-    char json[96];
+    char json[STATUS_N];
     statusJson(json, sizeof json);
     wm.server->send(200, "application/json", json);
 }
@@ -476,6 +578,7 @@ void setup() {
     printCurve();
     loadMqtt();
     printMqtt();
+    countBoot();
     net.setTimeout(2000);                    // ms for DNS and TCP connect (5 s each by default) and...
     mqtt.setSocketTimeout(2);                // ...s for the broker's reply (15): a dead broker stalls the loop ~6 s per try
     mqtt.setCallback(onMqtt);
