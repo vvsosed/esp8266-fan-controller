@@ -46,6 +46,8 @@ uint32_t mqttLastTry, mqttRetryS;          // millis() of the last connect attem
 const char *NTP_SERVER = "pool.ntp.org";
 const char *TIMEZONE = "EET-2EEST,M3.5.0/3,M10.5.0/4";   // POSIX TZ: Europe/Kyiv; the core's TZ.h lists others; change before flashing
 bool timeSynced;                           // SNTP has set the clock this boot
+uint32_t bootedAt;                         // UTC s this boot started, from the first sync; 0 = not yet known
+bool bootDue;                              // the clock was set: send MQTT boot again, now with booted
 
 // ---- Boot counter (see countBoot()) ----
 // BootRec and CrashRtc are defined up here because the IDE inserts the sketch's function prototypes,
@@ -337,23 +339,36 @@ void setFanPower(float t, int pct) {       // called once per 1 s cycle
     digitalWrite(POWER_PIN, fanPower ? HIGH : LOW);
 }
 
-const int STATUS_N = 256;                  // statusJson() buffer; its worst case is 247 bytes with the NUL
-// The live numbers, uptime (s), clock (UTC s), boots and last crash, for /status.json and MQTT. boots +
-// up order everything, as neither jumps; time is null until SNTP has set the clock.
-void statusJson(char *buf, size_t n) {
-    char t[12] = "null", now[12] = "null", at[12] = "null", crash[80] = "null";
-    if (lastTemp != DEVICE_DISCONNECTED_C) snprintf(t, sizeof t, "%.1f", lastTemp);   // else sensor missing
-    if (timeSynced) snprintf(now, sizeof now, "%u", (unsigned)time(nullptr));
-    if (boots.crashAt) snprintf(at, sizeof at, "%u", (unsigned)boots.crashAt);   // else crashed before the clock was set
-    if (boots.crashes) snprintf(crash, sizeof crash, "{\"at\":%s,\"up\":%u,\"why\":\"%s\"}",
-        at, (unsigned)boots.crashUp, RESET_NAME[min(boots.crashWhy, RESET_UNKNOWN)]);
-    snprintf(buf, n, "{\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u],\"up\":%u,\"time\":%s,"
-        "\"boots\":%u,\"crashes\":%u,\"reset\":\"%s\",\"crash\":%s}",
-        t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2],
-        (unsigned)(micros64() / 1000000), now, (unsigned)boots.boots, (unsigned)boots.crashes, resetReason, crash);
+const int STATUS_N = 288;                  // statusJson() buffer; with both parts its worst case is 267 bytes with the NUL
+const int JSON_LIVE = 1, JSON_BOOT = 2;    // statusJson() parts
+// A JSON object of the parts asked for: /status.json has both, MQTT one per topic. LIVE: the live numbers,
+// uptime (s) and clock (UTC s; null until SNTP has set it). BOOT: boots, when this one started (UTC s; null
+// until the first sync), why, and the last crash. boots + up order everything, as neither jumps. Each part
+// is written straight into buf ending in a comma, which the closing brace overwrites; past n, the JSON is
+// cut short.
+void statusJson(char *buf, size_t n, int parts) {
+    int len = snprintf(buf, n, "{");
+    if (parts & JSON_LIVE) {
+        char t[12] = "null", now[12] = "null";
+        if (lastTemp != DEVICE_DISCONNECTED_C) snprintf(t, sizeof t, "%.1f", lastTemp);   // else sensor missing
+        if (timeSynced) snprintf(now, sizeof now, "%u", (unsigned)time(nullptr));
+        len += snprintf(buf + len, n - len, "\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u],\"up\":%u,\"time\":%s,",
+            t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2],
+            (unsigned)(micros64() / 1000000), now);
+    }
+    if ((parts & JSON_BOOT) && len < (int)n) {
+        char booted[12] = "null", at[12] = "null", crash[80] = "null";
+        if (bootedAt) snprintf(booted, sizeof booted, "%u", (unsigned)bootedAt);
+        if (boots.crashAt) snprintf(at, sizeof at, "%u", (unsigned)boots.crashAt);   // else crashed before the clock was set
+        if (boots.crashes) snprintf(crash, sizeof crash, "{\"at\":%s,\"up\":%u,\"why\":\"%s\"}",
+            at, (unsigned)boots.crashUp, RESET_NAME[min(boots.crashWhy, RESET_UNKNOWN)]);
+        len += snprintf(buf + len, n - len, "\"boots\":%u,\"booted\":%s,\"reset\":\"%s\",\"crashes\":%u,\"crash\":%s,",
+            (unsigned)boots.boots, booted, resetReason, (unsigned)boots.crashes, crash);
+    }
+    if (len < (int)n) buf[len - 1] = '}';
 }
 
-// ---- MQTT: <hostname>/ramp and /duty (retained; set via .../set), /status, /online ----
+// ---- MQTT: <hostname>/ramp and /duty (retained; set via .../set), /status, /boot (retained), /online ----
 const char *topic(const char *leaf) {      // <hostname>/<leaf>, in a static buffer
     static char t[48];
     snprintf(t, sizeof t, "%s/%s", hostname, leaf);
@@ -378,8 +393,16 @@ void applyCurve(const Curve &c) {          // a valid curve from the page or MQT
 void publishStatus() {                     // not retained, so stale numbers never look live
     if (!WiFi.isConnected()) return;       // a dead link's socket still looks connected, and writing to it blocks
     char m[STATUS_N];
-    statusJson(m, sizeof m);
+    statusJson(m, sizeof m, JSON_LIVE);
     mqtt.publish(topic("status"), m);
+}
+
+// At each connect, and again once the clock is set (booted). Retained, so it is there on subscribe.
+void publishBoot() {
+    bootDue = false;                       // first, so a sync during this publish's yield() sets it again
+    char m[STATUS_N];
+    statusJson(m, sizeof m, JSON_BOOT);
+    mqtt.publish(topic("boot"), m, true);
 }
 
 // "key":<whole number> in a small flat JSON object: 1 = read into v, 0 = key absent,
@@ -433,18 +456,24 @@ bool mqttConnect() {
     }
     stamp();
     Serial.printf("MQTT: connected to %s:%u\n", mqttCfg.host, mqttCfg.port);
-    mqtt.publish(topic("online"), "online", true);
     mqtt.subscribe(topic("ramp/set"));
     mqtt.subscribe(topic("duty/set"));
     publishCurve();
+    publishBoot();
+    mqtt.publish(topic("online"), "online", true);   // last, so whoever acts on it finds the rest current
     return true;
 }
 
-// Every loop() pass: keepalive, incoming sets, reconnects. A connect blocks for up to ~6 s, so failed
-// tries back off from MQTT_RETRY_MIN_S to MQTT_RETRY_MAX_S; a drop after a good connection retries at
-// once. The wait is an unsigned millis() difference, so it survives the 49-day wrap.
+// Every loop() pass: keepalive, incoming sets, the boot update after the first sync, reconnects. A
+// connect blocks for up to ~6 s, so failed tries back off from MQTT_RETRY_MIN_S to MQTT_RETRY_MAX_S; a
+// drop after a good connection retries at once. The wait is an unsigned millis() difference, so it
+// survives the 49-day wrap.
 void mqttProcess() {
-    if (!mqttCfg.host[0] || !WiFi.isConnected() || mqtt.loop()) return;   // loop() is false while disconnected
+    if (!mqttCfg.host[0] || !WiFi.isConnected()) return;
+    if (mqtt.loop()) {                     // false while disconnected
+        if (bootDue) publishBoot();        // here, as onTimeSync() can run inside a yield() mid-publish
+        return;
+    }
     if (mqttRetryS && millis() - mqttLastTry < mqttRetryS * 1000) return;
     mqttLastTry = millis();
     mqttRetryS = mqttConnect() ? 0 : constrain(mqttRetryS * 2, MQTT_RETRY_MIN_S, MQTT_RETRY_MAX_S);
@@ -472,7 +501,7 @@ function u(){fetch('/status.json').then(r=>r.json()).then(d=>{
  st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %'+(d.pwr?'':' · fans off');
  fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>');
  const c=d.crash;
- up.innerText='Up '+dur(d.up)+(d.time?' since '+when(d.time-d.up):'')+' · boots '+d.boots+' · last reset: '+d.reset
+ up.innerText='Up '+dur(d.up)+(d.booted?' since '+when(d.booted):'')+' · boots '+d.boots+' · last reset: '+d.reset
   +'\nCrashes '+d.crashes+(c?' · last '+(c.at?when(c.at):'time unknown')+', '+c.why+' after '+dur(c.up)+' up':'')})}
 let H;
 function g(){fetch('/history.json').then(r=>r.json()).then(h=>{H=h;draw()})}
@@ -532,7 +561,7 @@ void handleRoot() {                        // status and graph are filled in by 
         "<input name=port type=number min=1 max=65535 required value=%u><br>"
         "User <input name=user class=w maxlength=31 value='%s'> "
         "Password <input name=pass class=w type=password maxlength=63 placeholder=unchanged><br>"
-        "<small style=color:gray>Blank broker = off. Topics: %s/ramp, /duty (set via …/set), /status, /online</small>"
+        "<small style=color:gray>Blank broker = off. Topics: %s/ramp, /duty (set via …/set), /status, /boot, /online</small>"
         "<p><button>Save</button></form></details>"
         "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
         "<p style=color:gray><small>%s · Firmware v%s · %s<br><span id=up></span></small>",
@@ -565,7 +594,7 @@ void handleHistory() {                     // ~3.3 KB when full, so streamed in 
 
 void handleStatus() {
     char json[STATUS_N];
-    statusJson(json, sizeof json);
+    statusJson(json, sizeof json, JSON_LIVE | JSON_BOOT);
     wm.server->send(200, "application/json", json);
 }
 
@@ -648,11 +677,15 @@ void startLan() {                          // joined the router: serve the pages
     Serial.printf("Web UI: http://%s/  (http://%s.local/)\n", WiFi.localIP().toString().c_str(), hostname);
 }
 
-void onTimeSync(bool sntp) {               // the core calls this from loop() each time the clock is set
-    if (!sntp || timeSynced) return;       // log the first SNTP sync only, not the hourly ones after it
+// The core schedules this each time the clock is set. It runs after loop() or inside any yield() or
+// delay(), such as one in the middle of an MQTT publish, so it must not publish itself.
+void onTimeSync(bool sntp) {
+    if (!sntp || timeSynced) return;       // the first SNTP sync only, not the hourly ones after it
     timeSynced = true;
+    bootedAt = time(nullptr) - micros64() / 1000000;
+    bootDue = true;                        // mqttProcess() sends boot again, now with booted
     char s[20];
-    fmtTime(s, sizeof s, time(nullptr) - micros64() / 1000000);
+    fmtTime(s, sizeof s, bootedAt);
     stamp();
     Serial.printf("Time: synced (booted %s)\n", s);
 }
@@ -681,7 +714,7 @@ void setup() {
     printMqtt();
     net.setTimeout(2000);                    // ms for DNS and TCP connect (5 s each by default) and...
     mqtt.setSocketTimeout(2);                // ...s for the broker's reply (15): a dead broker stalls the loop ~6 s per try
-    mqtt.setBufferSize(STATUS_N + 64);       // status + topic + header; publish() quietly fails past the default 256
+    mqtt.setBufferSize(STATUS_N + 64);       // header + topic + even both statusJson() parts; publish() quietly fails past it
     mqtt.setCallback(onMqtt);
 
     sensors.begin();

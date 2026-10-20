@@ -281,7 +281,7 @@ Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access po
 | Page | Use |
 |---|---|
 | `/history.json` | The graph data, oldest first: `{"step":10,"tl":21,"th":30,"t":[21.3,null,…],"d":[20,100,…]}` (`null` = no reading in that interval) |
-| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"pwr":1,"rpm":[600,630,660],"up":273600,"time":1792368764,"boots":14,"crashes":1,"reset":"power on","crash":{"at":1792090000,"up":86400,"why":"exception"}}` (`t` is `null` when the sensor is missing; `pwr` is 0 while the fans' 12 V is off; the rest is [uptime, boots and crashes](#uptime-boots-and-crashes) and the [clock](#clock-and-timestamps)) |
+| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"pwr":1,"rpm":[600,630,660],"up":273600,"time":1792368764,"boots":14,"booted":1792095164,"reset":"power on","crashes":1,"crash":{"at":1792090000,"up":86400,"why":"exception"}}` (`t` is `null` when the sensor is missing; `pwr` is 0 while the fans' 12 V is off; the rest is [uptime, boots and crashes](#uptime-boots-and-crashes) and the [clock](#clock-and-timestamps)) |
 | `/wifi` | Switch to a different network |
 | `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
 | `/update` | Upload new firmware ([Flash over Wi-Fi](#flash-over-wi-fi-from-the-browser)) |
@@ -300,9 +300,10 @@ Up 3 d 04:12 since 16.10.2026, 10:01 · boots 14 · last reset: power on
 Crashes 1 · last 15.10.2026, 07:40, exception after 1 d 00:00 up
 ```
 
-[`/status.json`](#status-page) and the [MQTT](#mqtt) `status` topic carry the same as `up` (seconds since this start), `time`, `boots`, `crashes`, `reset` and `crash`. Serial prints them at boot, e.g. `Boot 15, 2 crashes; this one: exception after 2 d 17:11:05 up, at 2026-10-19 03:12:44`.
+[`/status.json`](#status-page) carries the same as `up` (seconds since this start), `time`, `boots`, `booted`, `reset`, `crashes` and `crash`. Over [MQTT](#mqtt), `up` and `time` come with the live numbers in `status`, and the other five, which describe this start, in the retained `boot` topic. Serial prints them at boot, e.g. `Boot 15, 2 crashes; this one: exception after 2 d 17:11:05 up, at 2026-10-19 03:12:44`.
 
 - **boots** counts every start, this one included: power-ons, resets, firmware updates and crashes. Counting begins with the first firmware that has the counter. Only [erasing the flash completely](#erase-the-flash-completely) sets it back to 0.
+- **booted** is when this start happened, in UTC seconds. It is `null` until the board first gets the [time](#clock-and-timestamps), and from then on it is that time minus the uptime.
 - **crashes** counts the starts that followed a crash. This is the number to watch.
 - **last crash** (`crash` in the JSON, `null` before the first) says when it happened (`at`, UTC seconds), how long the board had been up (`up`, seconds) and why (`why`, one of the crash causes below). `at` is `null` if the board crashed before it had the [time](#clock-and-timestamps). It is kept with the count, so it survives later restarts and power cuts. Both come from a note the board makes in reset-proof memory every second, so they are right to within a second or two, a few seconds if an MQTT connect was under way.
 - **after … up** on the serial boot line is how long the previous run lasted. It is missing after a power cut, which wipes that memory.
@@ -323,7 +324,7 @@ Crashes 1 · last 15.10.2026, 07:40, exception after 1 d 00:00 up
 - **Power cuts:** a power cut while a record is being written loses that one start, nothing more.
 - **Other flash layouts:** the counter needs the board's default layout, `4MB (FS:2MB …)`. Built with `FS:none`, it shows only the current start (`boots 1`), and serial says `Boot counter off`. If you ever add a filesystem to this firmware, keep it clear of its last two sectors.
 
-**Watching it over MQTT.** A rising `crashes` means a crash; a falling `up` or a rising `boots` means some restart.
+**Watching it over MQTT.** Subscribe to `…/boot`. Being retained, it arrives as soon as you subscribe, again each time the board connects to the broker, and once more when the board first gets the time, to add `booted`. A rising `crashes` means a crash; a rising `boots`, or a falling `up` in `status`, means some restart.
 
 **Finding the cause of a crash.** Serial prints the crash before the board restarts: `Exception (n)`, `Soft WDT reset`, `Panic …` or `Abort called`, then a stack dump between `>>>stack>>>` and `<<<stack<<<`. Turn the code addresses (`40xxxxxx`) into source lines with the `.elf` of the same build (`./build.sh -e` exports it):
 
@@ -336,10 +337,10 @@ Crashes 1 · last 15.10.2026, 07:40, exception after 1 d 00:00 up
 
 The board keeps two kinds of time:
 
-- **Boot number and uptime** (`#14 +3612.345` on serial, `boots` and `up` in the JSON). They never jump and need no network, so use them to put events in order and to measure how long things took. The boot number survives power cuts; the uptime starts at 0 on every boot.
+- **Boot number and uptime** (`#14 +3612.345` on serial, `boots` and `up` in the JSON; over MQTT `boots` is in `boot` and `up` in `status`). They never jump and need no network, so use them to put events in order and to measure how long things took. The boot number survives power cuts; the uptime starts at 0 on every boot.
 - **The clock** (the date and time on serial, `time` in the JSON as UTC seconds). The board gets it from `pool.ntp.org` (`NTP_SERVER`) a few seconds after joining your network, and serial prints `Time: synced (booted …)`. It is corrected every hour. The clock can jump, at that first sync and by a fraction of a second at each correction. Nothing that drives the fans uses it.
 
-The board's start time is `time` − `up`. Until the first sync, and always in setup mode or without internet access, there is no clock: `time` is `null`, the page leaves out `since`, and serial lines show only boot number and uptime. Your router probably doesn't serve the time itself, so the board needs internet access.
+The board's start time is `booted`: `time` − `up` at the first sync. Until then, and always in setup mode or without internet access, there is no clock: `time` and `booted` are `null`, the page leaves out `since`, and serial lines show only boot number and uptime. Your router probably doesn't serve the time itself, so the board needs internet access.
 
 **Timezone.** `TIMEZONE` at the top of `fan_controller.ino` is a POSIX TZ string, set for Kyiv. The ESP8266 core's `TZ.h` (in `~/.arduino15/packages/esp8266/hardware/esp8266/*/cores/esp8266/`) lists them for other places. It only affects serial: the page shows your browser's local time, and the JSON and MQTT carry UTC.
 
@@ -370,7 +371,8 @@ The board can publish its fan curve and readings to an MQTT broker and take curv
 | `…/ramp/set` | to the board | `{"low":22,"high":32}`, or one key alone: `{"low":22}` |
 | `…/duty` | from the board, retained | `{"min":20,"max":100}`: duty at ramp start and end, % |
 | `…/duty/set` | to the board | `{"max":80}` etc. |
-| `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The same JSON as [`/status.json`](#status-page): `{"t":22.7,"pct":40,"pwr":1,"rpm":[600,630,750],"up":273600,"time":1792368764,"boots":14,"crashes":0,"reset":"power on","crash":null}` |
+| `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The live part of [`/status.json`](#status-page): `{"t":22.7,"pct":40,"pwr":1,"rpm":[600,630,750],"up":273600,"time":1792368764}` |
+| `…/boot` | from the board, retained, each time it connects and once more when it first gets the time | The rest of `/status.json`, which describes this start: `{"boots":14,"booted":1792095164,"reset":"power on","crashes":1,"crash":{"at":1792090000,"up":86400,"why":"exception"}}` ([uptime, boots and crashes](#uptime-boots-and-crashes)) |
 | `…/online` | from the board, retained | `online`, or `offline` once the board drops off (the broker sends it for the board) |
 
 `ramp` and `duty` are the two rows of the [fan curve](#change-the-fan-curve) form.
@@ -447,7 +449,7 @@ arduino-cli version
 | Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
 | `crashes` keeps going up | Leave a serial monitor running until it happens again, then [decode the stack dump](#uptime-boots-and-crashes). A `hardware watchdog` crash prints no dump |
 | `last reset: power on`, but nobody switched it off | The board lost power. Check its 5 V supply and USB cable |
-| `time` stays `null`, serial lines show no date | The board can't reach `pool.ntp.org`: no internet access, or DNS or UDP port 123 is blocked. It never syncs in setup mode. A `.local` name in `NTP_SERVER` never works: use a DNS name or an IP |
+| `time` and `booted` stay `null`, serial lines show no date | The board can't reach `pool.ntp.org`: no internet access, or DNS or UDP port 123 is blocked. It never syncs in setup mode. A `.local` name in `NTP_SERVER` never works: use a DNS name or an IP |
 | `fan-controller-XXXXXX.local` doesn't resolve | Check the chip ID first: `avahi-browse -rt _http._tcp` or your router's DHCP list shows each board's name. Otherwise `avahi-daemon` usually isn't running (`systemctl is-active avahi-daemon`). See [Setup step 5](#5-resolve-local-names). If it runs and still fails, a firewall may be blocking UDP 5353. Or use the IP from serial |
 | Changed `DEFAULT_CURVE` and flashed, but the curve didn't change | A curve saved from the status page takes priority over the compiled defaults. Press **Defaults** on the page |
 | MQTT says `not connected (state -2)` or `(state -4)` | The board can't reach the broker, or it didn't answer in time. Check the IP and port, that the broker is running, and that no firewall blocks the port (1883). A `.local` broker name never works here: use the IP |
