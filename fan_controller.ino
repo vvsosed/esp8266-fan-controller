@@ -184,9 +184,15 @@ void saveMqtt() {
     EEPROM.commit();
 }
 
+const char *broker() {                     // host:port, in a static buffer
+    static char b[sizeof mqttCfg.host + 6];
+    snprintf(b, sizeof b, "%s:%u", mqttCfg.host, mqttCfg.port);
+    return b;
+}
+
 void printMqtt() {
     stamp();
-    if (mqttCfg.host[0]) Serial.printf("MQTT: %s:%u%s\n", mqttCfg.host, mqttCfg.port, mqttCfg.user[0] ? " with login" : "");
+    if (mqttCfg.host[0]) Serial.printf("MQTT: %s%s\n", broker(), mqttCfg.user[0] ? " with login" : "");
     else Serial.println("MQTT: off");
 }
 
@@ -375,6 +381,10 @@ const char *topic(const char *leaf) {      // <hostname>/<leaf>, in a static buf
     return t;
 }
 
+// Every topic we publish retained, which the broker keeps for later subscribers. mqttLeave() erases
+// these, so a new retained topic goes here too.
+const char *const RETAINED[] = {"ramp", "duty", "boot", "online"};
+
 void publishCurve() {                      // the curve in force
     char m[32];
     snprintf(m, sizeof m, "{\"low\":%d,\"high\":%d}", curve.tLow, curve.tHigh);
@@ -451,17 +461,37 @@ bool mqttConnect() {
     const char *pass = user && mqttCfg.pass[0] ? mqttCfg.pass : nullptr;
     if (!mqtt.connect(hostname, user, pass, topic("online"), 0, true, "offline")) {
         stamp();
-        Serial.printf("MQTT: %s:%u failed, state %d\n", mqttCfg.host, mqttCfg.port, mqtt.state());
+        Serial.printf("MQTT: %s failed, state %d\n", broker(), mqtt.state());
         return false;
     }
     stamp();
-    Serial.printf("MQTT: connected to %s:%u\n", mqttCfg.host, mqttCfg.port);
+    Serial.printf("MQTT: connected to %s\n", broker());
     mqtt.subscribe(topic("ramp/set"));
     mqtt.subscribe(topic("duty/set"));
     publishCurve();
     publishBoot();
     mqtt.publish(topic("online"), "online", true);   // last, so whoever acts on it finds the rest current
     return true;
+}
+
+// Before the broker settings change. A clean disconnect makes the broker drop the will, so this says
+// offline itself. erase (we are leaving this broker) also empties our retained topics there: an empty
+// retained message deletes one. offline goes first, as watchers such as Home Assistant ignore an empty
+// online. False if that erase may not have happened: not connected, or the broker didn't ack it (on a
+// dead link the writes just sit in lwIP).
+bool mqttLeave(bool erase) {
+    bool on = mqtt.connected(), acked = false;
+    if (on) {
+        mqtt.publish(topic("online"), "offline", true);
+        if (erase) for (const char *leaf : RETAINED) mqtt.publish(topic(leaf), "", true);
+        acked = net.flush(1000);           // false after 1 s without an ack
+        mqtt.disconnect();
+    }
+    if (!erase || !mqttCfg.host[0]) return true;
+    stamp();
+    Serial.printf("MQTT: left %s, %s\n", broker(),
+        acked ? "topics erased" : on ? "no ack: our topics there may stay" : "not connected: any topics there stay");
+    return acked;
 }
 
 // Every loop() pass: keepalive, incoming sets, the boot update after the first sync, reconnects. A
@@ -542,7 +572,7 @@ void handleRoot() {                        // status and graph are filled in by 
     wm.server->sendContent_P(PAGE_HEAD);
     wm.server->sendContent(hostname);
     wm.server->sendContent_P(PAGE_TOP);
-    char buf[1024];                        // the curve form, then the broker form + footer
+    char buf[1024];                        // the curve form, the broker form, then the footer
     snprintf(buf, sizeof buf,
         "<form method=post action=/curve><p>"
         "Ramp <input name=tl type=number min=0 max=100 required value=%d> → "
@@ -561,11 +591,16 @@ void handleRoot() {                        // status and graph are filled in by 
         "<input name=port type=number min=1 max=65535 required value=%u><br>"
         "User <input name=user class=w maxlength=31 value='%s'> "
         "Password <input name=pass class=w type=password maxlength=63 placeholder=unchanged><br>"
-        "<small style=color:gray>Blank broker = off. Topics: %s/ramp, /duty (set via …/set), /status, /boot, /online</small>"
-        "<p><button>Save</button></form></details>"
+        "<small style=color:gray>Detach forgets the broker and erases this board's topics on it. "
+        "Topics: %s/ramp, /duty (set via …/set), /status, /boot, /online</small>"
+        "<p><button>Save</button>%s</form></details>",
+        state, mqttCfg.host, mqttCfg.port, mqttCfg.user, hostname, mqttCfg.host[0]
+            ? " <button name=detach value=1 formnovalidate onclick=\"return confirm('Forget this broker?')\">Detach</button>" : "");
+    wm.server->sendContent(buf);
+    snprintf(buf, sizeof buf,
         "<p><a href=/wifi>Wi-Fi settings</a> · <a href=/info>Info / erase Wi-Fi</a>"
         "<p style=color:gray><small>%s · Firmware v%s · %s<br><span id=up></span></small>",
-        state, mqttCfg.host, mqttCfg.port, mqttCfg.user, hostname, hostname, FW_VERSION, GIT_HASH);
+        hostname, FW_VERSION, GIT_HASH);
     wm.server->sendContent(buf);
     wm.server->sendContent_P(PAGE_SCRIPT);
 }
@@ -616,13 +651,18 @@ void handleCurve() {                       // form POST: validate, apply, save, 
 
 // Broker form POST. Host and user are echoed into value='…', so they are limited to safe characters.
 // A blank password keeps the saved one, but only for the same host and user, so a changed host never
-// gets the old password; a blank user drops both.
+// gets the old password; a blank user drops both. Detach or a blank broker saves DEFAULT_MQTT, whatever
+// the other fields say.
 void handleMqtt() {
     auto &s = *wm.server;
     String host = s.arg("host"), user = s.arg("user"), pass = s.arg("pass");
     host.trim();
     user.trim();
     long port = s.arg("port").toInt();
+    if (s.hasArg("detach") || !host.length()) {
+        host = user = pass = "";
+        port = DEFAULT_MQTT.port;
+    }
     bool ok = host.length() < sizeof mqttCfg.host && user.length() < sizeof mqttCfg.user
            && pass.length() < sizeof mqttCfg.pass && 0 < port && port <= 65535;
     for (char ch : host) ok &= isalnum(ch) || ch == '.' || ch == '-';
@@ -635,10 +675,9 @@ void handleMqtt() {
     }
     if (!user.length()) pass = "";
     else if (!pass.length() && host == mqttCfg.host && user == mqttCfg.user) pass = mqttCfg.pass;
-    if (mqtt.connected()) {                // a clean disconnect skips the last will, so say it ourselves
-        mqtt.publish(topic("online"), "offline", true);
-        mqtt.disconnect();
-    }
+    bool leaving = host != mqttCfg.host || port != mqttCfg.port;   // Detach or another broker: erase there
+    char was[sizeof mqttCfg.host + 6] = "";   // the broker we left our topics on, for the page below
+    if (!mqttLeave(leaving)) snprintf(was, sizeof was, "%s", broker());
     strncpy(mqttCfg.host, host.c_str(), sizeof mqttCfg.host);   // strncpy zero-fills the rest, so no
     strncpy(mqttCfg.user, user.c_str(), sizeof mqttCfg.user);   // tail of an older, longer value stays
     strncpy(mqttCfg.pass, pass.c_str(), sizeof mqttCfg.pass);   // in flash; lengths are checked above
@@ -646,6 +685,14 @@ void handleMqtt() {
     saveMqtt();
     printMqtt();
     mqttRetryS = 0;                        // connect on the next pass
+    if (was[0]) {                          // the old host passed the same check when saved, so it is safe to echo
+        char m[320];
+        snprintf(m, sizeof m, "<meta charset=utf-8>Saved, but the board couldn't erase its topics on %s (not "
+            "connected, or no reply), so any it left there stay. The README's MQTT section shows how to erase "
+            "them. <a href=/>Back</a>", was);
+        s.send(200, "text/html; charset=utf-8", m);
+        return;
+    }
     s.sendHeader("Location", "/");
     s.send(303);
 }

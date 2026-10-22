@@ -357,11 +357,19 @@ The timeouts are `CONNECT_TIMEOUT_S` and `PORTAL_TIMEOUT_S` at the top of `fan_c
 
 The board can publish its fan curve and readings to an MQTT broker and take curve changes from it. It stays off until you enter a broker.
 
-**Setup.** On the [status page](#status-page), open **MQTT** and enter the broker's IP or DNS name and port (1883 by default). If the broker needs a login, add the user and password. Then press **Save**. The section's title shows the state: `connected`, `not connected (state N)` or `off`. Serial also prints `MQTT: connected to …`. To switch MQTT off, clear the broker field and save.
+**Setup.** On the [status page](#status-page), open **MQTT** and enter the broker's IP or DNS name and port (1883 by default). If the broker needs a login, add the user and password. Then press **Save**. The section's title shows the state: `connected`, `not connected (state N)` or `off`. Serial also prints `MQTT: connected to …`.
 
 - **Use an IP or a DNS name.** A `.local` name doesn't work, because the ESP8266 can't resolve mDNS names when it connects out.
 - **Password field:** leave it blank to keep the saved password. That only works while the broker and the user stay the same. If you change either, enter the password again, so the old password is never sent to a new broker. Clearing the user removes both.
 - **Broker unreachable:** the board tries again after 30 s and doubles the wait after each failure, up to 5 min (`MQTT_RETRY_MIN_S` / `MQTT_RETRY_MAX_S`). Each try can freeze the status page for up to about 6 s. The fans keep running normally. Saving the MQTT form tries again at once, and so does a connection that drops after it was working.
+
+**Detach.** To switch MQTT off, press **Detach** in the MQTT section. The board publishes `offline`, then erases its retained topics on the broker (`ramp`, `duty`, `boot` and `online`), so the device no longer shows up there. Then it disconnects and forgets the broker, user and password. Saving with the broker field blank does the same. Saving a different broker or port erases the topics on the old one before connecting to the new one. Saving the same broker again (a new password, say) only sends `offline` and reconnects.
+
+The board can only erase while it is connected, and it waits up to 1 s for the broker to confirm. If it isn't connected, or there is no reply, it still detaches, but a page says that its topics on that broker may be left behind. To erase them by hand, send an empty retained message to each, with the port and login the board used:
+
+```bash
+for t in ramp duty boot online; do mosquitto_pub -h <broker> -p 1883 -u <user> -P <password> -t fan-controller-XXXXXX/$t -r -n; done   # drop -u/-P without a login
+```
 
 **Topics.** Every topic starts with the board's name, the same `fan-controller-XXXXXX` as on the status page:
 
@@ -373,7 +381,7 @@ The board can publish its fan curve and readings to an MQTT broker and take curv
 | `…/duty/set` | to the board | `{"max":80}` etc. |
 | `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The live part of [`/status.json`](#status-page): `{"t":22.7,"pct":40,"pwr":1,"rpm":[600,630,750],"up":273600,"time":1792368764}` |
 | `…/boot` | from the board, retained, each time it connects and once more when it first gets the time | The rest of `/status.json`, which describes this start: `{"boots":14,"booted":1792095164,"reset":"power on","crashes":1,"crash":{"at":1792090000,"up":86400,"why":"exception"}}` ([uptime, boots and crashes](#uptime-boots-and-crashes)) |
-| `…/online` | from the board, retained | `online`, or `offline` once the board drops off (the broker sends it for the board) |
+| `…/online` | from the board, retained | `online`, or `offline` once the board drops off (the broker sends it for the board). Erased, with the other retained topics, on [Detach](#mqtt) |
 
 `ramp` and `duty` are the two rows of the [fan curve](#change-the-fan-curve) form.
 
