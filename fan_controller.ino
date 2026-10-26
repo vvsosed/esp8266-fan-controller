@@ -16,7 +16,7 @@ const char *FW_VERSION = "0.0.2";          // bump by hand on release
 #endif
 
 // ---- Pins ----
-const uint8_t PWM_PIN[3]  = {12, 13, 15};  // D6, D7, D8 → transistor → fan pin 4
+const uint8_t PWM_PIN     = 12;            // D6 → one transistor → pin 4 of every fan (D7, D8 are free)
 const uint8_t TACH_PIN[3] = {5, 4, 14};    // D1, D2, D5 ← fan pin 3 (pull-up to 3.3 V)
 const uint8_t ONEWIRE_PIN = 2;             // D4 ← DS1820 DQ (4.7 kΩ to 3.3 V)
 const uint8_t POWER_PIN   = 16;            // D0 → NPN → P-MOSFET on the fans' 12 V; HIGH (or undriven) = on
@@ -325,8 +325,8 @@ int curvePct(float t) {                    // whole degrees; the core's map() ro
     return constrain(p, curve.pctMin, curve.pctMax);                              // would run map() up to 3 times
 }
 
-void setFan(int i, int pct) {              // inverted by the transistor
-    analogWrite(PWM_PIN[i], 255 - pct * 255 / 100);
+void setFan(int pct) {                     // inverted by the transistor; one line feeds all three fans
+    analogWrite(PWM_PIN, 255 - pct * 255 / 100);
 }
 
 // Fans don't stop at 0 % PWM, so 0 % cuts their 12 V. The curve leaves 0 % at a whole degree, and
@@ -744,11 +744,11 @@ void setup() {
 
     digitalWrite(POWER_PIN, HIGH);           // GPIO16's latch takes this while still an input, so
     pinMode(POWER_PIN, OUTPUT);              // D0 never drives low; until here the 10 kΩ pull-up kept the 12 V on
+    pinMode(PWM_PIN, OUTPUT);
+    setFan(PCT_FAILSAFE);
     for (int i = 0; i < 3; i++) {
-        pinMode(PWM_PIN[i], OUTPUT);
         pinMode(TACH_PIN[i], INPUT);           // use INPUT_PULLUP if no external resistor
         attachInterrupt(digitalPinToInterrupt(TACH_PIN[i]), isr[i], FALLING);
-        setFan(i, PCT_FAILSAFE);
     }
 
     settimeofday_cb(onTimeSync);             // SNTP itself starts in startLan()
@@ -818,8 +818,8 @@ void loop() {
 
     stamp();
     Serial.printf("Temp %.1f °C -> %d %%%s |", t, pct, fanPower ? "" : " (12 V off)");
+    setFan(fanPower ? pct : 100);              // 12 V cut: 100 % = GPIO low, so the PWM transistor idles too
     for (int i = 0; i < 3; i++) {
-        setFan(i, fanPower ? pct : 100);       // 12 V cut: 100 % = GPIO low, so the PWM transistors idle too
         noInterrupts(); uint32_t p = pulses[i]; pulses[i] = 0; interrupts();
         lastRpm[i] = p * 30000UL / dt;
         Serial.printf(" Fan%d %u RPM", i + 1, (unsigned)lastRpm[i]);

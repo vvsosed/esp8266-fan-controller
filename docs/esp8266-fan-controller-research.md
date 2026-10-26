@@ -5,11 +5,11 @@
 ## Summary
 
 - An ESP8266 board (Wemos D1 mini / NodeMCU) **can control three standard 4-pin PWM PC fans** and read all three tachometers. The fans need their own 12 V supply, and the ESP only provides the control signals.
-- **PWM:** about 25 kHz, open-drain. The most robust option is one small NPN transistor or N-MOSFET per fan, which mimics a motherboard and inverts the signal; invert the duty cycle in software.
+- **PWM:** about 25 kHz, open-drain. The most robust option is one small NPN transistor or N-MOSFET whose collector feeds all three fans' PWM lines, as a motherboard's PWM splitter does. It inverts the signal; invert the duty cycle in software.
 - **Tachometers:** these **can connect directly** to GPIOs. The output is open-collector, so a pull-up to **3.3 V** (internal or an external 10 kΩ) is all that's needed.
 - **DS1820:** fits on the one remaining good pin, **GPIO2 (D4)**, with a 4.7 kΩ pull-up.
 - **Fans fully off:** most fans don't stop at 0 % PWM, so **GPIO16 (D0)** drives one high-side switch that cuts all three fans' 12 V. The switch is a P-MOSFET, driven through an NPN.
-- **Pin budget:** with this setup the board is fully used. Any further peripherals point toward an ESP32.
+- **Pin budget:** with one shared PWM driver, D7 and D8 stay free (D8 with its boot constraint). Much more than that points toward an ESP32.
 
 ---
 
@@ -36,11 +36,13 @@ Wire colours vary by manufacturer, so always go by pin position.
 ### PWM signal
 
 - The fan pulls its own PWM pin up internally (to 3.3 V or 5 V depending on model). An **unconnected or undriven PWM pin means 100 % speed**, which is a useful fail-safe.
-- **Recommended: open-drain driver per fan**
-  - NPN (2N3904 / BC547): base → 1 kΩ → GPIO, emitter → GND, collector → fan pin 4; **or**
-  - Logic-level N-MOSFET (2N7000 / BSS138): gate → GPIO, source → GND, drain → fan pin 4.
+- **Recommended: one open-drain driver shared by all three fans**, as a 4-pin PWM splitter cable does on a motherboard
+  - NPN (2N3904 / BC547): base → 1 kΩ → GPIO, emitter → GND, collector → pin 4 of every fan; **or**
+  - Logic-level N-MOSFET (2N7000 / BSS138): gate → GPIO, source → GND, drain → pin 4 of every fan.
+  - The driver only pulls the line low, so the fans' internal pull-ups just sit in parallel. The 4-wire fan spec caps each PWM input's sink current at 5 mA, so the stage sinks at most 15 mA; a 2N3904 with a 1 kΩ base resistor saturates at ten times that. A 5 V fan and a 3.3 V fan on one line settle between the two, which every PWM input must tolerate (5.25 V max).
   - This keeps a 5 V fan pull-up away from the 3.3 V GPIO.
   - The signal is **inverted** (GPIO high → fan line low), so the duty cycle is inverted in software.
+  - The trade: one failed driver affects all three fans, and the fans can't run at different speeds. The firmware applies one duty to all three anyway.
 - **Shortcut:** wiring the GPIO directly to pin 4 often works, but it relies on the ESP's protection diodes when a fan pulls up to 5 V. **Never do this on GPIO15** (see pin budget).
 - **0 % duty does not always mean stopped.** Many fans fall back to a minimum speed (~20–30 %). To guarantee a fan is off, its 12 V line has to be switched on the high side. This design does that for all three fans at once from GPIO16 (D0).
 
@@ -51,18 +53,18 @@ Wire colours vary by manufacturer, so always go by pin position.
 
 ### Pin budget and boot-strap constraints
 
-3 PWM + 3 tach + 1 one-wire + 1 power switch = **8 signals**. Only five ESP8266 pins are fully free of restrictions: GPIO4, 5, 12, 13, 14.
+1 PWM + 3 tach + 1 one-wire + 1 power switch = **6 signals**. Only five ESP8266 pins are fully free of restrictions: GPIO4, 5, 12, 13, 14. Four of them are used, which leaves GPIO13 (D7) free, plus GPIO15 (D8) with its boot constraint.
 
 | Pin | Boot requirement | Use here |
 |---|---|---|
-| GPIO15 (D8) | Must be **low** at boot (board has pull-down) | PWM output **through a transistor only**. A fan wired directly would pull it high and the board won't boot. |
+| GPIO15 (D8) | Must be **low** at boot (board has pull-down) | Free. Anything added here must not pull it high at boot: a fan's PWM pull-up would, and the board won't boot, so a fan goes here **through a transistor only**. |
 | GPIO2 (D4) | Must be **high** at boot | 1-Wire bus. Its pull-up satisfies the boot condition. |
 | GPIO0 (D3) | Must be **high** at boot; flash button | Left unused |
 | GPIO16 (D0) | No interrupt support, no internal pull-up | Fans' 12 V switch (plain output). Unsuitable for tach. Must not be bridged to RST (the deep-sleep wake jumper), or driving it low resets the board |
 | GPIO1/3 (TX/RX) | Serial | Left for USB serial |
 
 - **Do not put tach lines on GPIO0 or GPIO2.** A fan holding its tach low at reset can stop the board from booting.
-- With transistor drivers the fans run at **full speed during boot**, which is a safe default. The 12 V switch keeps this: the core sets every pin to input at startup, and the 10 kΩ pull-up on D0 then holds the switch on until the firmware drives it.
+- With the transistor driver the fans run at **full speed during boot**, which is a safe default. The 12 V switch keeps this: the core sets every pin to input at startup, and the 10 kΩ pull-up on D0 then holds the switch on until the firmware drives it.
 
 ---
 
@@ -110,26 +112,28 @@ Optional extras:
 
 | Signal | GPIO | Board label | Hardware |
 |---|---|---|---|
-| Fan 1 PWM | GPIO12 | D6 | NPN/MOSFET open-drain |
-| Fan 2 PWM | GPIO13 | D7 | NPN/MOSFET open-drain |
-| Fan 3 PWM | GPIO15 | D8 | NPN/MOSFET open-drain (**mandatory** on this pin) |
+| PWM, fans 1–3 | GPIO12 | D6 | One NPN/MOSFET open-drain driver, collector to every fan's pin 4 |
 | Fan 1 tach | GPIO5 | D1 | 10 kΩ to 3.3 V |
 | Fan 2 tach | GPIO4 | D2 | 10 kΩ to 3.3 V |
 | Fan 3 tach | GPIO14 | D5 | 10 kΩ to 3.3 V |
 | DS1820 DQ | GPIO2 | D4 | 4.7 kΩ to 3.3 V |
 | Fans' 12 V switch | GPIO16 | D0 | NPN driver → P-MOSFET; 10 kΩ pull-up to 3.3 V |
 
+GPIO13 (D7) and GPIO15 (D8) are free. D8 must be low at boot.
+
 ---
 
 ## 5. Wiring per channel
 
-**PWM driver (repeat for each fan):**
+**PWM driver (one for all three fans):**
 
 ```
-                    Fan pin 4 (PWM, pulled up inside the fan)
+                          ┌──── pin 4 (PWM) of fan 1
+                          ├──── pin 4 (PWM) of fan 2   (each fan pulls the line up inside)
+                          ├──── pin 4 (PWM) of fan 3
                           │
                           C
-GPIO12 ──[ 1 kΩ ]──────── B   NPN (2N3904 / BC547)
+D6 (GPIO12) ──[ 1 kΩ ]─── B   NPN (2N3904 / BC547)
                           E
                           │
                          GND
@@ -198,8 +202,8 @@ GND ─────────────────────────�
 | 1 | ESP8266 board (Wemos D1 mini or NodeMCU) | |
 | 1 | 12 V DC supply | ≥ sum of fan currents + margin |
 | 1 | Buck converter 12 V → 5 V | Feeds the board |
-| 3 | NPN 2N3904 / BC547 (or 2N7000 / BSS138) | PWM drivers |
-| 3 | 1 kΩ resistor | NPN base resistors (not needed with MOSFETs) |
+| 1 | NPN 2N3904 / BC547 (or 2N7000 / BSS138) | PWM driver, shared by the three fans |
+| 1 | 1 kΩ resistor | NPN base resistor (not needed with a MOSFET) |
 | 3 | 10 kΩ resistor | Tach pull-ups (optional with `INPUT_PULLUP`) |
 | 3 | 1 kΩ resistor | Optional tach series protection |
 | 3 | 10 nF capacitor | Optional tach filtering |
@@ -226,7 +230,7 @@ The fan curve runs at 30 % up to 30 °C and ramps linearly to 100 % at 50 °C. I
 #include <DallasTemperature.h>
 
 // ---- Pins ----
-const uint8_t PWM_PIN[3]  = {12, 13, 15};  // D6, D7, D8 → transistor → fan pin 4
+const uint8_t PWM_PIN     = 12;            // D6 → one transistor → pin 4 of every fan
 const uint8_t TACH_PIN[3] = {5, 4, 14};    // D1, D2, D5 ← fan pin 3 (pull-up to 3.3 V)
 const uint8_t ONEWIRE_PIN = 2;             // D4 ← DS1820 DQ (4.7 kΩ to 3.3 V)
 
@@ -244,8 +248,8 @@ void (*isr[3])() = {t0, t1, t2};
 OneWire oneWire(ONEWIRE_PIN);
 DallasTemperature sensors(&oneWire);
 
-void setFan(int i, int pct) {              // inverted by the transistor
-  analogWrite(PWM_PIN[i], 255 - pct * 255 / 100);
+void setFan(int pct) {                     // inverted by the transistor; one line feeds all three fans
+  analogWrite(PWM_PIN, 255 - pct * 255 / 100);
 }
 
 void setup() {
@@ -253,11 +257,11 @@ void setup() {
   analogWriteFreq(25000);                  // 25 kHz per fan spec
   analogWriteRange(255);
 
+  pinMode(PWM_PIN, OUTPUT);
+  setFan(PCT_MAX);
   for (int i = 0; i < 3; i++) {
-    pinMode(PWM_PIN[i], OUTPUT);
     pinMode(TACH_PIN[i], INPUT);           // use INPUT_PULLUP if no external resistor
     attachInterrupt(digitalPinToInterrupt(TACH_PIN[i]), isr[i], FALLING);
-    setFan(i, PCT_MAX);
   }
 
   sensors.begin();
@@ -281,8 +285,8 @@ void loop() {
   }
 
   Serial.printf("Temp %.1f °C -> %d %% |", t, pct);
+  setFan(pct);
   for (int i = 0; i < 3; i++) {
-    setFan(i, pct);
     noInterrupts(); uint32_t p = pulses[i]; pulses[i] = 0; interrupts();
     Serial.printf(" Fan%d %u RPM", i + 1, (unsigned)(p * 30000UL / dt));
   }
@@ -297,9 +301,9 @@ void loop() {
 - [ ] Grounds of 12 V supply, buck converter, ESP and fans are common
 - [ ] Tach pull-ups go to **3.3 V**, never 12 V
 - [ ] Each fan model's tach line verified as open-collector (multimeter test)
-- [ ] GPIO15 drives a transistor, never a fan directly
+- [ ] Nothing wired to GPIO15 (D8), which is free here, pulls it high at boot
 - [ ] No tach lines on GPIO0 / GPIO2
-- [ ] PWM duty inverted in software when using transistor drivers
+- [ ] PWM duty inverted in software when using the transistor driver
 - [ ] Expect a minimum speed instead of a full stop at 0 % on many fans; the D0 switch cuts their 12 V instead
 - [ ] 12 V switch is high-side: MOSFET source on the supply, drain to the fans
 - [ ] P-MOSFET rated Vgs ±20 V
@@ -311,5 +315,5 @@ void loop() {
 
 ## 9. Alternatives and next steps
 
-- **ESPHome / Home Assistant:** the same hardware can be configured in YAML with an `esp8266_pwm` output at 25 kHz (`inverted: true` for the transistor drivers) driving a speed fan, a `pulse_counter` sensor per tach pin, and a `dallas_temp` sensor on GPIO2.
+- **ESPHome / Home Assistant:** the same hardware can be configured in YAML with an `esp8266_pwm` output at 25 kHz (`inverted: true` for the transistor driver) driving a speed fan, a `pulse_counter` sensor per tach pin, and a `dallas_temp` sensor on GPIO2.
 - **ESP32:** worth switching if more peripherals are needed. It has hardware PWM (LEDC) at 25 kHz with clean timing, hardware pulse counters (PCNT) for the tachs, and far more free GPIOs.

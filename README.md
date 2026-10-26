@@ -50,12 +50,14 @@ fan_controller/
 
 | Signal | GPIO | Board label | Notes |
 |---|---|---|---|
-| Fan 1 / 2 / 3 PWM | 12 / 13 / 15 | D6 / D7 / D8 | Through NPN/MOSFET open-drain (inverted in firmware) |
+| PWM, all three fans | 12 | D6 | One NPN/MOSFET open-drain stage feeds every fan's pin 4, like a PWM splitter (inverted in firmware) |
 | Fan 1 / 2 / 3 tach | 5 / 4 / 14 | D1 / D2 / D5 | 10 kΩ pull-up to **3.3 V** |
 | DS1820 data | 2 | D4 | 4.7 kΩ pull-up to 3.3 V |
 | Fans' 12 V switch | 16 | D0 | NPN + P-MOSFET high-side switch, 10 kΩ pull-up to 3.3 V. High or undriven = fans powered |
 
 Fans run on a separate 12 V supply, switched on and off by D0 ([wiring](docs/esp8266-fan-controller-research.md#5-wiring-per-channel)). All grounds must be common.
+
+D7 (GPIO13) and D8 (GPIO15) are free. D8 must be low at boot, so nothing wired to it may pull it high.
 
 ---
 
@@ -445,14 +447,14 @@ arduino-cli version
 | Board missing from `board list` | Charge-only USB cable; check `dmesg -w` while plugging in (expect `ch341` or `cp210x`). If `brltty` is installed it can grab CH340 adapters: `sudo pacman -Rns brltty` |
 | `Timed out waiting for packet header` | Lower upload speed (`baud=115200`). If it persists, hold FLASH and tap RESET to enter the bootloader manually |
 | `Port busy` / upload fails right away | Serial monitor still open; close it |
-| Board doesn't boot with hardware attached | GPIO15 pulled high (fan wired directly instead of through a transistor), or GPIO0/GPIO2 held low |
-| Fans always at 100 % | Sensor not found (`-127 °C` in the log): check the DS1820 wiring and 4.7 kΩ pull-up. Also check whether a fan is wired directly without a transistor: then the PWM is not inverted and `setFan()` needs `analogWrite(pin, pct * 255 / 100)` |
+| Board doesn't boot with hardware attached | Something wired to the free D8 (GPIO15) pulls it high (a fan's PWM line would), or GPIO0/GPIO2 held low |
+| Fans always at 100 % | Sensor not found (`-127 °C` in the log): check the DS1820 wiring and 4.7 kΩ pull-up. Also check whether the fans' PWM lines are wired straight to D6 without the transistor: then the PWM is not inverted and `setFan()` needs `analogWrite(PWM_PIN, pct * 255 / 100)` |
 | Occasional single `-127 °C` reading, fans jump to 100 % for a second | The firmware already retries a failed read once, because web traffic can disturb 1-Wire timing on the ESP8266. If it still shows up, check the DS1820 wiring, the 4.7 kΩ pull-up and the cable length |
 | RPM reads 0 | Missing tach pull-up, fan not powered, or grounds not common. Expected while the 12 V is switched off (status page says `fans off`) |
 | Fans still spin at 0 % | The 12 V is cut only once the temperature is 0.5 °C below where the duty leaves 0 %, and then after 10 s, so wait. If the status says `fans off` and they still spin, the P-MOSFET is probably reversed: its built-in diode then passes 12 V all the time. Source goes to the 12 V supply, drain to the fans |
 | Fans never spin, even at 100 % | No 12 V reaches pin 2. Check that D0 measures 3.3 V while the firmware runs (about 1.5 V with the board in reset, where only the 10 kΩ pull-up holds it), the transistor pinouts (they differ between part numbers), and that the NPN emitter is grounded |
 | RPM jumps around | Add a 10 kΩ external pull-up (instead of `INPUT_PULLUP`) and/or 10 nF from tach pin to GND |
-| A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching a transistor collector (fan pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
+| A fan reads ~760,000 RPM | Its tach pin is counting the 25 kHz PWM (760,000 ÷ 30 ≈ 25,000 pulses/s), so it's shorted to a PWM line. Look for a solder bridge between neighbouring header pins (D5 sits next to D6 on the D1 mini) or a tach wire touching the PWM transistor's collector (the shared line to every fan's pin 4). If unplugging the fan doesn't change the reading, the short is on the board |
 | Wi-Fi flaky or won't connect | A tach pin shorted to PWM (row above) fires 25,000 interrupts per second and starves Wi-Fi. Fix that first |
 | Setup access point appears unexpectedly | A second reset within 10 s of boot counted as a [double reset](#getting-back-into-setup). Opening the serial monitor right after flashing can do this. Press RST once and wait |
 | `crashes` keeps going up | Leave a serial monitor running until it happens again, then [decode the stack dump](#uptime-boots-and-crashes). A `hardware watchdog` crash prints no dump |
