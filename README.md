@@ -122,7 +122,7 @@ The board announces itself over mDNS. Linux resolves `.local` names only when th
 sudo pacman -S --needed avahi nss-mdns
 grep '^hosts' /etc/nsswitch.conf      # must contain: mdns_minimal [NOTFOUND=return] before resolve
 sudo systemctl enable --now avahi-daemon
-getent hosts fan-controller-XXXXXX.local   # once the board is on Wi-Fi: prints its IP
+getent hosts fan-controller-XXXXXX.local   # prints its IP once your PC and the board share a network
 avahi-browse -rt _http._tcp                # lists every board on the network with its name and IP
 ```
 
@@ -262,9 +262,9 @@ Your network's name and password are never in the source. WiFiManager stores the
 
 ### First-time setup
 
-1. Flash the board. With no network saved, it starts an access point named `fan-controller-XXXXXX`, where `XXXXXX` is its chip ID. The board keeps that name on your network too (`http://fan-controller-XXXXXX.local/`), so note it down. Every board gets its own name, so several can share one network.
+1. Flash the board. With no network saved, it starts an access point named `fan-controller-XXXXXX`, where `XXXXXX` is its chip ID. The board answers to that name on the access point and on your network alike (`http://fan-controller-XXXXXX.local/`), so note it down. Every board gets its own name, so several can share one network.
 2. Join it from a phone or laptop. The password is `AP_PASS` in `fan_controller.ino` (default `fancontrol`).
-3. A setup page opens by itself (otherwise browse to `http://192.168.4.1/`). Pick your network, enter its password, Save.
+3. A setup page opens by itself (otherwise browse to `http://fan-controller-XXXXXX.local/` or `http://192.168.4.1/`). Pick your network, enter its password, Save.
 4. The access point shuts down and the board joins your router. Serial prints the `Web UI:` line.
 
 The fans keep following the temperature the whole time the access point is up.

@@ -714,9 +714,16 @@ void addRoutes() {                         // runs before WiFiManager adds its r
     wm.server->on("/mqtt", HTTP_POST, handleMqtt);
 }
 
+// The core's responder joins the multicast group on every interface that is up and restarts itself
+// when one comes or goes, answering with the address the query arrived on. So started once the setup
+// AP or the LAN link is up, it serves the AP as well as the LAN.
+void startMdns() {
+    if (!MDNS.isRunning() && MDNS.begin(hostname)) MDNS.addService("http", "tcp", 80);
+}
+
 void startLan() {                          // joined the router: serve the pages there
     wm.startWebPortal();
-    if (!MDNS.isRunning() && MDNS.begin(hostname)) MDNS.addService("http", "tcp", 80);
+    startMdns();                             // normally running since setup(); a retry if that failed
     // (Re)start SNTP now that the network is up: started any earlier, its first try fails and lwIP
     // retries only after 15 s, doubling up to 150 s
     configTime(TIMEZONE, NTP_SERVER);
@@ -787,6 +794,7 @@ void setup() {
     } else {
         wm.autoConnect(hostname, AP_PASS);     // can't connect → starts the setup AP
     }
+    startMdns();                             // either way an interface is up now; the name works on the AP too
 }
 
 void loop() {
