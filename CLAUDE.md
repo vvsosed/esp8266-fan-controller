@@ -75,4 +75,6 @@ Everything lives in `fan_controller.ino`: a 1-second cooperative loop (early-ret
 - The 6 signals use four of the five unrestricted pins (GPIO4/5/12/14) plus GPIO2/GPIO16. GPIO13 (D7) is the one free unrestricted pin, and GPIO15 (D8) is free with its boot constraint. Anything beyond that means moving to an ESP32.
 - Tach pull-ups go to **3.3 V only**, never 12 V. Fans need a separate 12 V supply with grounds tied common, switched **high-side** (a switched fan ground would float the tach/PWM lines toward 12 V).
 
+`docs/board/` is the placement plan for building the controller on a diymore 5 × 7 cm prototype board with a bare ESP-12F: `data.py` holds the holes, parts, chains and wires, `gen.py` checks them (one net per hole, no 12 V on the holes stubbed to the back's ESP-32 pads) and draws the SVGs, `page.py` writes `board.html`. Run `python3 page.py` in that folder after editing `data.py`; `board.html` is committed so the plan can be read without running anything.
+
 Note: §7 of the research doc contains a copy of the firmware. `fan_controller.ino` is the source of truth; the doc copy may drift.

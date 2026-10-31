@@ -39,7 +39,8 @@ fan_controller/
 ├── CLAUDE.md            # guidance for Claude Code
 ├── .gitignore
 ├── docs/
-│   └── esp8266-fan-controller-research.md   # hardware design, wiring, parts list
+│   ├── esp8266-fan-controller-research.md   # hardware design, wiring, parts list
+│   └── board/           # perfboard placement plan for a bare ESP-12F: `python3 page.py` regenerates board.html
 ├── mqtt-broker/         # throwaway Mosquitto in Docker for testing MQTT (Dockerfile + entrypoint.sh)
 └── build/               # only if you export binaries (-e); not committed
 ```

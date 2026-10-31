@@ -2,3 +2,5 @@ build/
 out/
 sketch.yaml
 git_hash.h
+__pycache__/
+docs/board/*.svg

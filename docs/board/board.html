@@ -1,0 +1,1279 @@
+<title>Fan Controller Board Layout</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Code+Pro:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column, the two board drawings full width, tables scroll sideways on phones. */
+:root { --bg:#f5f4ee; --fg:#1f2a24; --muted:#5d6b63; --accent:#2f6f4e; --line:#d8d5c9; --card:#fdfdfa; --warn:#b54708;
+  --sans:"Source Sans 3", "Segoe UI", system-ui, sans-serif; --mono:"Source Code Pro", ui-monospace, Menlo, monospace }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141916; --fg:#e6ebe6; --muted:#9ba89f; --accent:#86c9a2; --line:#2a332d; --card:#1b221d; --warn:#f0a35e; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#141916; --fg:#e6ebe6; --muted:#9ba89f; --accent:#86c9a2; --line:#2a332d; --card:#1b221d; --warn:#f0a35e; color-scheme:dark }
+body { background:var(--bg); color:var(--fg); font:16px/1.5 var(--sans); padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); padding-block:24px 48px }
+main { max-width:1100px; margin:0 auto; display:grid; gap:28px }
+h1 { font-size:2rem; line-height:1.15; margin:0; text-wrap:balance }
+h2 { font-size:1.3rem; margin:0 0 8px; color:var(--accent) }
+h3 { font-size:1.05rem; margin:14px 0 4px }
+p, li { max-width:68ch } p { margin:6px 0 }
+.lede { color:var(--muted); font-size:1.05rem }
+.eyebrow { text-transform:uppercase; letter-spacing:.08em; font-size:.75rem; color:var(--muted); font-weight:600 }
+code { font:0.9em var(--mono); background:color-mix(in srgb, var(--fg) 8%, transparent); padding:1px 5px; border-radius:4px; white-space:nowrap }
+pre { font:0.85rem/1.4 var(--mono); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto }
+.tw { overflow-x:auto; border:1px solid var(--line); border-radius:8px; background:var(--card) }
+table { border-collapse:collapse; width:100%; font-size:.95rem }
+th, td { text-align:left; vertical-align:top; padding:7px 10px; border-bottom:1px solid var(--line) }
+th { font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted) }
+tbody tr:last-child td { border-bottom:0 }
+.sw { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px }
+.fig { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px }
+.fig svg { width:100%; height:auto; display:block }
+.legend { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:.9rem; color:var(--muted); margin-top:8px }
+.legend span.k { display:inline-block; width:12px; height:12px; border-radius:50%; vertical-align:-1px; margin-right:5px; border:2px solid #8a7a44; background:#f1e5b8 }
+.warn { border-left:4px solid var(--warn); padding:6px 12px; background:color-mix(in srgb, var(--warn) 9%, transparent); border-radius:0 8px 8px 0 }
+.cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px 28px } .cols > * { min-width:0 }
+ol, ul { padding-left:22px; margin:6px 0 }
+/* board drawing */
+.board { fill:#2f6f4e; stroke:#1b4a33; stroke-width:2 }
+.mount { fill:var(--card); stroke:#1b4a33; stroke-width:1.5 }
+.module { fill:#3a7a58; stroke:#dfe9e3; stroke-width:1.5; stroke-dasharray:6 4 }
+.antenna { fill:none; stroke:#dfe9e3; stroke-width:1 }
+.modlabel { fill:#dfe9e3; font:16px var(--sans) }
+.pad { fill:#d6c18a } .trace { fill:none; stroke:#d6c18a; stroke-width:1.5 }
+.hole { fill:#f1e5b8; stroke:#8a7a44; stroke-width:1.5 }
+.hole.keep { fill:#e03131; stroke:#7a1010 } .hole.stub { stroke:#f3c623; stroke-width:3 }
+.pin { fill:#fff; font:9px var(--mono) } .grid { fill:var(--fg); font:600 10px var(--mono) }
+.part.body { fill:#eef0ec; fill-opacity:.95; stroke:#343a40; stroke-width:1.5 }
+.lead { fill:none; stroke:#343a40; stroke-width:1.5 } .stripe { fill:#343a40 }
+.ref { fill:#212529; font:700 10px var(--sans) } .pinname { fill:#212529; font:8px var(--sans) }
+.tab { fill:#adb5bd } .button { fill:#495057 } .pinsq { fill:#343a40 } .screw { fill:#adb5bd; stroke:#343a40 }
+.buck { fill:#eef0ec; stroke:#343a40 } .chain { fill:none; stroke-width:6; stroke-linecap:round; opacity:.9 }
+.wire { fill:none; stroke-linecap:round; opacity:.85 } .wirelbl { fill:#111; font:600 8px var(--sans); pointer-events:none }
+.lbl { cursor:pointer } .lbl rect { fill:#fff; fill-opacity:.92; stroke-width:1 } .lbl:hover rect, .lbl:focus-visible rect { stroke-width:2.5 } .lbl:focus { outline:none }
+g.net.off { display:none } g.net.woff .wire { display:none } g.net.woff .lbl { opacity:.4 } g.net.woff .lbl rect { stroke-dasharray:3 2 }
+.nets { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px }
+.chip { font:inherit; font-size:.85rem; line-height:1.2; padding:4px 10px; border:1px solid var(--line); border-radius:999px; background:var(--card); color:var(--fg); cursor:pointer }
+.chip.off { opacity:.45; text-decoration:line-through } .chip:focus-visible { outline:2px solid var(--accent); outline-offset:1px }
+tr.wrow { cursor:pointer } tr.wrow.off td { opacity:.4 }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior:auto } }
+</style>
+<main>
+<header>
+  <div class="eyebrow">diymore 5 × 7 cm ESP-12 prototype board · ESP8266 fan controller</div>
+  <h1>Fan Controller Board Layout</h1>
+  <p class="lede">Where every part of the three-fan controller goes on the board, and which holes to bridge and wire on the back. The grid is 26 columns (A–Z, left to right) by 18 rows (1–18, top to bottom), 2.54 mm apart; A1 is the top-left corner by the mounting hole, so <code>F3</code> is the hole the board labels RST.</p>
+</header>
+
+<section>
+  <h2>What this plan assumes</h2>
+  <ul>
+    <li><b>A bare ESP-12F module</b> on the centre footprint, not the D1 mini. The board has no regulator, no USB and no boot-strap resistors, so this plan adds them: pull-ups on EN, RST and IO0, a pull-down on IO15, two buttons, a serial header, and a Mini-360 buck module trimmed to 3.3 V. The firmware and its pins stay as they are.</li>
+    <li><b>Every hole is isolated.</b> Each module pin is routed to exactly one hole, the one beside its label: F3–F10 on the left, T3–T10 on the right, K13–P13 under the module for the six flash pins. Nothing else on the board is connected to anything.</li>
+    <li><b>The back carries an unused ESP-32 footprint.</b> Its bare pads are tied to the holes drawn with a yellow ring (column F rows 2–12, column T rows 2–15, H13, H14 and J13–R13). The plan keeps 12 V off those holes and uses insulated wire wherever a wire crosses the back of the module area.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Top side: parts</h2>
+  <div class="fig"><svg class="brd" viewBox="-30 -10 750 541" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="top view"><rect class="board" x="0" y="0" width="700.0" height="501.0" rx="12"/>
+<circle class="mount" cx="24.6" cy="26.1" r="15"/>
+<circle class="mount" cx="676.4" cy="26.1" r="15"/>
+<circle class="mount" cx="24.6" cy="471.7" r="15"/>
+<circle class="mount" cx="676.4" cy="471.7" r="15"/>
+<rect class="module" x="253.2" y="0" width="173.5" height="254.0"/>
+<rect class="antenna" x="293.2" y="6" width="93.5" height="50" rx="4"/>
+<text class="modlabel" x="340.0" y="187" text-anchor="middle">ESP-12F</text>
+<rect class="pad" x="249.2" y="78.8" width="12" height="10"/>
+<path class="trace" d="M253.2,83.8 L235.2,83.8 L170.0,83.8 L160.0,83.8"/>
+<rect class="pad" x="249.2" y="98.8" width="12" height="10"/>
+<path class="trace" d="M253.2,103.8 L235.2,103.8 L170.0,109.2 L160.0,109.2"/>
+<rect class="pad" x="249.2" y="118.8" width="12" height="10"/>
+<path class="trace" d="M253.2,123.8 L235.2,123.8 L170.0,134.6 L160.0,134.6"/>
+<rect class="pad" x="249.2" y="138.8" width="12" height="10"/>
+<path class="trace" d="M253.2,143.8 L235.2,143.8 L170.0,160.0 L160.0,160.0"/>
+<rect class="pad" x="249.2" y="158.8" width="12" height="10"/>
+<path class="trace" d="M253.2,163.8 L235.2,163.8 L170.0,185.4 L160.0,185.4"/>
+<rect class="pad" x="249.2" y="178.8" width="12" height="10"/>
+<path class="trace" d="M253.2,183.8 L235.2,183.8 L170.0,210.8 L160.0,210.8"/>
+<rect class="pad" x="249.2" y="198.8" width="12" height="10"/>
+<path class="trace" d="M253.2,203.8 L235.2,203.8 L170.0,236.2 L160.0,236.2"/>
+<rect class="pad" x="249.2" y="218.8" width="12" height="10"/>
+<path class="trace" d="M253.2,223.8 L235.2,223.8 L170.0,261.6 L160.0,261.6"/>
+<rect class="pad" x="418.7" y="78.8" width="12" height="10"/>
+<path class="trace" d="M426.7,83.8 L444.7,83.8 L505.6,83.8 L515.6,83.8"/>
+<rect class="pad" x="418.7" y="98.8" width="12" height="10"/>
+<path class="trace" d="M426.7,103.8 L444.7,103.8 L505.6,109.2 L515.6,109.2"/>
+<rect class="pad" x="418.7" y="118.8" width="12" height="10"/>
+<path class="trace" d="M426.7,123.8 L444.7,123.8 L505.6,134.6 L515.6,134.6"/>
+<rect class="pad" x="418.7" y="138.8" width="12" height="10"/>
+<path class="trace" d="M426.7,143.8 L444.7,143.8 L505.6,160.0 L515.6,160.0"/>
+<rect class="pad" x="418.7" y="158.8" width="12" height="10"/>
+<path class="trace" d="M426.7,163.8 L444.7,163.8 L505.6,185.4 L515.6,185.4"/>
+<rect class="pad" x="418.7" y="178.8" width="12" height="10"/>
+<path class="trace" d="M426.7,183.8 L444.7,183.8 L505.6,210.8 L515.6,210.8"/>
+<rect class="pad" x="418.7" y="198.8" width="12" height="10"/>
+<path class="trace" d="M426.7,203.8 L444.7,203.8 L505.6,236.2 L515.6,236.2"/>
+<rect class="pad" x="418.7" y="218.8" width="12" height="10"/>
+<path class="trace" d="M426.7,223.8 L444.7,223.8 L505.6,261.6 L515.6,261.6"/>
+<rect class="pad" x="287.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M292.1,254.0 L287.0,337.8"/>
+<rect class="pad" x="307.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M312.1,254.0 L312.4,337.8"/>
+<rect class="pad" x="327.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M332.1,254.0 L337.8,337.8"/>
+<rect class="pad" x="347.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M352.1,254.0 L363.2,337.8"/>
+<rect class="pad" x="367.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M372.1,254.0 L388.6,337.8"/>
+<rect class="pad" x="387.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M392.1,254.0 L414.0,337.8"/>
+<circle class="hole " cx="33.0" cy="261.6" r="4.5"/>
+<circle class="hole " cx="33.0" cy="287.0" r="4.5"/>
+<circle class="hole " cx="33.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="33.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="33.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="33.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="33.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="58.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="83.8" r="4.5"/>
+<circle class="hole " cx="33.0" cy="109.2" r="4.5"/>
+<circle class="hole " cx="33.0" cy="134.6" r="4.5"/>
+<circle class="hole " cx="33.0" cy="160.0" r="4.5"/>
+<circle class="hole " cx="33.0" cy="185.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="210.8" r="4.5"/>
+<circle class="hole " cx="33.0" cy="236.2" r="4.5"/>
+<circle class="hole " cx="58.4" cy="33.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="261.6" r="4.5"/>
+<circle class="hole " cx="58.4" cy="287.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="312.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="58.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="58.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="464.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="58.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="83.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="109.2" r="4.5"/>
+<circle class="hole " cx="58.4" cy="134.6" r="4.5"/>
+<circle class="hole " cx="58.4" cy="160.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="185.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="210.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="236.2" r="4.5"/>
+<circle class="hole " cx="83.8" cy="33.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="261.6" r="4.5"/>
+<circle class="hole " cx="83.8" cy="287.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="312.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="83.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="83.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="58.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="83.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="109.2" r="4.5"/>
+<circle class="hole " cx="83.8" cy="134.6" r="4.5"/>
+<circle class="hole " cx="83.8" cy="160.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="185.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="210.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="236.2" r="4.5"/>
+<circle class="hole " cx="109.2" cy="33.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="261.6" r="4.5"/>
+<circle class="hole " cx="109.2" cy="287.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="312.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="109.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="109.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="464.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="58.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="83.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="109.2" r="4.5"/>
+<circle class="hole " cx="109.2" cy="134.6" r="4.5"/>
+<circle class="hole " cx="109.2" cy="160.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="185.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="210.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="236.2" r="4.5"/>
+<circle class="hole " cx="134.6" cy="33.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="261.6" r="4.5"/>
+<circle class="hole " cx="134.6" cy="287.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="312.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="134.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="134.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="464.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="58.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="83.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="109.2" r="4.5"/>
+<circle class="hole " cx="134.6" cy="134.6" r="4.5"/>
+<circle class="hole " cx="134.6" cy="160.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="185.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="210.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="236.2" r="4.5"/>
+<circle class="hole " cx="160.0" cy="33.0" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="261.6" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="287.0" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="160.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="160.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="160.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="160.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="160.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="160.0" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="58.4" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="83.8" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="109.2" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="134.6" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="160.0" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="185.4" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="210.8" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="236.2" r="4.5"/>
+<circle class="hole " cx="185.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="185.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="185.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="185.4" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="210.8" cy="337.8" r="4.5"/>
+<circle class="hole stub" cx="210.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="210.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="210.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="210.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="210.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="236.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="236.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="236.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="236.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="236.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="236.2" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="261.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="261.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="261.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="261.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="261.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="261.6" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="287.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="287.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="287.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="287.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="287.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="287.0" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="312.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="312.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="312.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="312.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="312.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="312.4" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="337.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="337.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="337.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="337.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="337.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="337.8" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="363.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="363.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="363.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="363.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="363.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="363.2" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="388.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="388.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="388.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="388.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="388.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="388.6" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="414.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="414.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="414.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="414.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="414.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="414.0" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="439.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="439.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="439.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="439.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="439.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="439.4" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="464.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="464.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="464.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="464.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="464.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="464.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="490.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="490.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="490.2" cy="464.8" r="4.5"/>
+<circle class="hole " cx="515.6" cy="33.0" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="261.6" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="287.0" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="312.4" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="337.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="363.2" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="515.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="515.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="515.6" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="58.4" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="83.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="109.2" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="134.6" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="160.0" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="185.4" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="210.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="236.2" r="4.5"/>
+<circle class="hole " cx="541.0" cy="33.0" r="4.5"/>
+<circle class="hole " cx="541.0" cy="261.6" r="4.5"/>
+<circle class="hole " cx="541.0" cy="287.0" r="6"/>
+<circle class="hole " cx="541.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="541.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="541.0" cy="414.0" r="6"/>
+<circle class="hole " cx="541.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="464.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="58.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="83.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="109.2" r="4.5"/>
+<circle class="hole " cx="541.0" cy="134.6" r="4.5"/>
+<circle class="hole " cx="541.0" cy="160.0" r="4.5"/>
+<circle class="hole " cx="541.0" cy="185.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="210.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="236.2" r="4.5"/>
+<circle class="hole " cx="566.4" cy="33.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="261.6" r="4.5"/>
+<circle class="hole " cx="566.4" cy="287.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="312.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="566.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="566.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="464.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="58.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="83.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="109.2" r="4.5"/>
+<circle class="hole " cx="566.4" cy="134.6" r="4.5"/>
+<circle class="hole " cx="566.4" cy="160.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="185.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="210.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="236.2" r="4.5"/>
+<circle class="hole " cx="591.8" cy="33.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="287.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="312.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="591.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="591.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="58.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="83.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="109.2" r="4.5"/>
+<circle class="hole " cx="591.8" cy="134.6" r="4.5"/>
+<circle class="hole " cx="591.8" cy="160.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="185.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="210.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="236.2" r="4.5"/>
+<circle class="hole " cx="617.2" cy="33.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="287.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="312.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="617.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="617.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="464.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="58.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="83.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="109.2" r="4.5"/>
+<circle class="hole " cx="617.2" cy="134.6" r="4.5"/>
+<circle class="hole " cx="617.2" cy="160.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="185.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="210.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="236.2" r="4.5"/>
+<circle class="hole " cx="642.6" cy="33.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="261.6" r="4.5"/>
+<circle class="hole " cx="642.6" cy="287.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="312.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="642.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="642.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="464.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="58.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="83.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="109.2" r="4.5"/>
+<circle class="hole " cx="642.6" cy="134.6" r="4.5"/>
+<circle class="hole " cx="642.6" cy="160.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="185.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="210.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="236.2" r="4.5"/>
+<circle class="hole " cx="668.0" cy="261.6" r="4.5"/>
+<circle class="hole " cx="668.0" cy="287.0" r="6"/>
+<circle class="hole " cx="668.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="668.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="668.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="668.0" cy="414.0" r="6"/>
+<circle class="hole " cx="668.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="58.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="83.8" r="4.5"/>
+<circle class="hole " cx="668.0" cy="109.2" r="4.5"/>
+<circle class="hole " cx="668.0" cy="134.6" r="4.5"/>
+<circle class="hole " cx="668.0" cy="160.0" r="4.5"/>
+<circle class="hole " cx="668.0" cy="185.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="210.8" r="4.5"/>
+<circle class="hole " cx="668.0" cy="236.2" r="4.5"/>
+<text class="pin" x="174.0" y="78.8" text-anchor="start">RST</text>
+<text class="pin" x="174.0" y="104.2" text-anchor="start">ADC</text>
+<text class="pin" x="174.0" y="129.6" text-anchor="start">EN</text>
+<text class="pin" x="174.0" y="155.0" text-anchor="start">IO16</text>
+<text class="pin" x="174.0" y="180.4" text-anchor="start">IO14</text>
+<text class="pin" x="174.0" y="205.8" text-anchor="start">IO12</text>
+<text class="pin" x="174.0" y="231.2" text-anchor="start">IO13</text>
+<text class="pin" x="174.0" y="256.6" text-anchor="start">3V3</text>
+<text class="pin" x="501.6" y="78.8" text-anchor="end">TXD</text>
+<text class="pin" x="501.6" y="104.2" text-anchor="end">RXD</text>
+<text class="pin" x="501.6" y="129.6" text-anchor="end">IO5</text>
+<text class="pin" x="501.6" y="155.0" text-anchor="end">IO4</text>
+<text class="pin" x="501.6" y="180.4" text-anchor="end">IO0</text>
+<text class="pin" x="501.6" y="205.8" text-anchor="end">IO2</text>
+<text class="pin" x="501.6" y="231.2" text-anchor="end">IO15</text>
+<text class="pin" x="501.6" y="256.6" text-anchor="end">GND</text>
+<text class="pin" transform="translate(290.5,328.8) rotate(-90)">CS0</text>
+<text class="pin" transform="translate(315.9,328.8) rotate(-90)">MISO</text>
+<text class="pin" transform="translate(341.3,328.8) rotate(-90)">IO9</text>
+<text class="pin" transform="translate(366.7,328.8) rotate(-90)">IO10</text>
+<text class="pin" transform="translate(392.1,328.8) rotate(-90)">MOSI</text>
+<text class="pin" transform="translate(417.5,328.8) rotate(-90)">SCLK</text>
+<text class="grid" x="33.0" y="517.0" text-anchor="middle">A</text>
+<text class="grid" x="58.4" y="517.0" text-anchor="middle">B</text>
+<text class="grid" x="83.8" y="517.0" text-anchor="middle">C</text>
+<text class="grid" x="109.2" y="517.0" text-anchor="middle">D</text>
+<text class="grid" x="134.6" y="517.0" text-anchor="middle">E</text>
+<text class="grid" x="160.0" y="517.0" text-anchor="middle">F</text>
+<text class="grid" x="185.4" y="517.0" text-anchor="middle">G</text>
+<text class="grid" x="210.8" y="517.0" text-anchor="middle">H</text>
+<text class="grid" x="236.2" y="517.0" text-anchor="middle">I</text>
+<text class="grid" x="261.6" y="517.0" text-anchor="middle">J</text>
+<text class="grid" x="287.0" y="517.0" text-anchor="middle">K</text>
+<text class="grid" x="312.4" y="517.0" text-anchor="middle">L</text>
+<text class="grid" x="337.8" y="517.0" text-anchor="middle">M</text>
+<text class="grid" x="363.2" y="517.0" text-anchor="middle">N</text>
+<text class="grid" x="388.6" y="517.0" text-anchor="middle">O</text>
+<text class="grid" x="414.0" y="517.0" text-anchor="middle">P</text>
+<text class="grid" x="439.4" y="517.0" text-anchor="middle">Q</text>
+<text class="grid" x="464.8" y="517.0" text-anchor="middle">R</text>
+<text class="grid" x="490.2" y="517.0" text-anchor="middle">S</text>
+<text class="grid" x="515.6" y="517.0" text-anchor="middle">T</text>
+<text class="grid" x="541.0" y="517.0" text-anchor="middle">U</text>
+<text class="grid" x="566.4" y="517.0" text-anchor="middle">V</text>
+<text class="grid" x="591.8" y="517.0" text-anchor="middle">W</text>
+<text class="grid" x="617.2" y="517.0" text-anchor="middle">X</text>
+<text class="grid" x="642.6" y="517.0" text-anchor="middle">Y</text>
+<text class="grid" x="668.0" y="517.0" text-anchor="middle">Z</text>
+<text class="grid" x="-8" y="36.5" text-anchor="end">1</text>
+<text class="grid" x="-8" y="61.9" text-anchor="end">2</text>
+<text class="grid" x="-8" y="87.3" text-anchor="end">3</text>
+<text class="grid" x="-8" y="112.7" text-anchor="end">4</text>
+<text class="grid" x="-8" y="138.1" text-anchor="end">5</text>
+<text class="grid" x="-8" y="163.5" text-anchor="end">6</text>
+<text class="grid" x="-8" y="188.9" text-anchor="end">7</text>
+<text class="grid" x="-8" y="214.3" text-anchor="end">8</text>
+<text class="grid" x="-8" y="239.7" text-anchor="end">9</text>
+<text class="grid" x="-8" y="265.1" text-anchor="end">10</text>
+<text class="grid" x="-8" y="290.5" text-anchor="end">11</text>
+<text class="grid" x="-8" y="315.9" text-anchor="end">12</text>
+<text class="grid" x="-8" y="341.3" text-anchor="end">13</text>
+<text class="grid" x="-8" y="366.7" text-anchor="end">14</text>
+<text class="grid" x="-8" y="392.1" text-anchor="end">15</text>
+<text class="grid" x="-8" y="417.5" text-anchor="end">16</text>
+<text class="grid" x="-8" y="442.9" text-anchor="end">17</text>
+<text class="grid" x="-8" y="468.3" text-anchor="end">18</text>
+<path class="lead" d="M160.0,83.8 Q147.3,65.8 134.6,83.8"/>
+<circle class="part body" cx="160.0" cy="83.8" r="12"/>
+<text class="ref" x="160.0" y="87.3" text-anchor="middle">R1</text>
+<path class="lead" d="M160.0,134.6 Q147.3,116.6 134.6,134.6"/>
+<circle class="part body" cx="160.0" cy="134.6" r="12"/>
+<text class="ref" x="160.0" y="138.1" text-anchor="middle">R2</text>
+<path class="lead" d="M160.0,160.0 Q147.3,142.0 134.6,160.0"/>
+<circle class="part body" cx="160.0" cy="160.0" r="12"/>
+<text class="ref" x="160.0" y="163.5" text-anchor="middle">R3</text>
+<path class="lead" d="M160.0,185.4 Q147.3,167.4 134.6,185.4"/>
+<circle class="part body" cx="160.0" cy="185.4" r="12"/>
+<text class="ref" x="160.0" y="188.9" text-anchor="middle">R4</text>
+<path class="lead" d="M134.6,337.8 Q134.6,307.1 134.6,312.4"/>
+<circle class="part body" cx="134.6" cy="337.8" r="12"/>
+<text class="ref" x="134.6" y="341.3" text-anchor="middle">R5</text>
+<path class="lead" d="M109.2,287.0 Q96.5,269.0 83.8,287.0"/>
+<circle class="part body" cx="109.2" cy="287.0" r="12"/>
+<text class="ref" x="109.2" y="290.5" text-anchor="middle">R6</text>
+<path class="lead" d="M515.6,134.6 Q528.3,116.6 541.0,134.6"/>
+<circle class="part body" cx="515.6" cy="134.6" r="12"/>
+<text class="ref" x="515.6" y="138.1" text-anchor="middle">R7</text>
+<path class="lead" d="M515.6,160.0 Q528.3,142.0 541.0,160.0"/>
+<circle class="part body" cx="515.6" cy="160.0" r="12"/>
+<text class="ref" x="515.6" y="163.5" text-anchor="middle">R8</text>
+<path class="lead" d="M515.6,185.4 Q528.3,167.4 541.0,185.4"/>
+<circle class="part body" cx="515.6" cy="185.4" r="12"/>
+<text class="ref" x="515.6" y="188.9" text-anchor="middle">R9</text>
+<path class="lead" d="M515.6,210.8 Q528.3,192.8 541.0,210.8"/>
+<circle class="part body" cx="515.6" cy="210.8" r="12"/>
+<text class="ref" x="515.6" y="214.3" text-anchor="middle">R10</text>
+<path class="lead" d="M515.6,236.2 Q528.3,230.9 541.0,261.6"/>
+<circle class="part body" cx="515.6" cy="236.2" r="12"/>
+<text class="ref" x="515.6" y="239.7" text-anchor="middle">R11</text>
+<path class="lead" d="M185.4,388.6 Q198.1,370.6 210.8,388.6"/>
+<circle class="part body" cx="185.4" cy="388.6" r="12"/>
+<text class="ref" x="185.4" y="392.1" text-anchor="middle">R12</text>
+<rect class="part body" x="151.0" y="281.7" width="18" height="36" rx="4"/>
+<text class="ref" x="160.0" y="303.2" text-anchor="middle">C1</text>
+<rect class="part body" x="574.9" y="125.8" width="110" height="170" rx="4"/>
+<text class="ref" x="629.9" y="214.8" text-anchor="middle">U2 Mini-360</text>
+<text class="pinname" x="629.9" y="226.8" text-anchor="middle">12 V → 3.3 V</text>
+<rect class="pinsq" x="586.8" y="129.6" width="10" height="10"/>
+<text class="pinname" x="602.8" y="137.6" text-anchor="start">IN+</text>
+<rect class="pinsq" x="663.0" y="129.6" width="10" height="10"/>
+<text class="pinname" x="657.0" y="137.6" text-anchor="end">IN−</text>
+<rect class="pinsq" x="586.8" y="282.0" width="10" height="10"/>
+<text class="pinname" x="602.8" y="290.0" text-anchor="start">OUT+</text>
+<rect class="pinsq" x="663.0" y="282.0" width="10" height="10"/>
+<text class="pinname" x="657.0" y="290.0" text-anchor="end">OUT−</text>
+<path class="lead" d="M414.0,414.0 Q414.0,408.7 414.0,439.4"/>
+<circle class="part body" cx="414.0" cy="414.0" r="12"/>
+<circle class="stripe" cx="414.0" cy="439.4" r="5"/>
+<text class="ref" x="414.0" y="417.5" text-anchor="middle">D1</text>
+<path class="part body" d="M624.6,339.2 h24 v48 h-24 a24,24 0 0 1 0,-48 z"/>
+<text class="ref" x="642.6" y="366.7" text-anchor="middle">Q1</text>
+<text class="pinname" x="656.6" y="340.8">C</text>
+<text class="pinname" x="656.6" y="366.2">B</text>
+<text class="pinname" x="656.6" y="391.6">E</text>
+<path class="part body" d="M548.4,339.2 h24 v48 h-24 a24,24 0 0 1 0,-48 z"/>
+<text class="ref" x="566.4" y="366.7" text-anchor="middle">Q2</text>
+<text class="pinname" x="580.4" y="340.8">C</text>
+<text class="pinname" x="580.4" y="366.2">B</text>
+<text class="pinname" x="580.4" y="391.6">E</text>
+<rect class="part body" x="211.6" y="341.2" width="100" height="44" rx="3"/>
+<rect class="tab" x="211.6" y="377.2" width="100" height="8"/>
+<text class="ref" x="261.6" y="367.2" text-anchor="middle">Q3 IRF9540N</text>
+<text class="pinname" x="236.2" y="380.2" text-anchor="middle">S</text>
+<text class="pinname" x="261.6" y="380.2" text-anchor="middle">D</text>
+<text class="pinname" x="287.0" y="380.2" text-anchor="middle">G</text>
+<rect class="part body" x="53.8" y="66.5" width="60" height="60" rx="6"/>
+<circle class="button" cx="83.8" cy="96.5" r="16"/>
+<text class="ref" x="83.8" y="136.5" text-anchor="middle">SW1 RST</text>
+<rect class="part body" x="53.8" y="193.5" width="60" height="60" rx="6"/>
+<circle class="button" cx="83.8" cy="223.5" r="16"/>
+<text class="ref" x="83.8" y="263.5" text-anchor="middle">SW2 FLASH</text>
+<rect class="part body" x="503.0" y="45.9" width="76" height="25" rx="3"/>
+<rect class="pinsq" x="510.6" y="53.4" width="10" height="10"/>
+<rect class="pinsq" x="536.0" y="53.4" width="10" height="10"/>
+<rect class="pinsq" x="561.4" y="53.4" width="10" height="10"/>
+<text class="ref" x="541.0" y="40.4" text-anchor="middle">J1 serial</text>
+<rect class="part body" x="20.4" y="312.2" width="76" height="102" rx="4"/>
+<circle class="screw" cx="58.4" cy="337.8" r="12"/>
+<text class="pinname" x="74.4" y="340.8">+12 V</text>
+<circle class="screw" cx="58.4" cy="388.6" r="12"/>
+<text class="pinname" x="74.4" y="391.6">GND</text>
+<text class="ref" x="58.4" y="367.2" text-anchor="middle">J2</text>
+<rect class="part body" x="96.3" y="439.8" width="102" height="58" rx="3"/>
+<rect class="part body" x="101.2" y="487.8" width="66.8" height="8"/>
+<rect class="pinsq" x="104.2" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(112.7,452.8) rotate(-90)">GND</text>
+<rect class="pinsq" x="129.6" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(138.1,452.8) rotate(-90)">+12 V sw</text>
+<rect class="pinsq" x="155.0" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(163.5,452.8) rotate(-90)">tach 1</text>
+<rect class="pinsq" x="180.4" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(188.9,452.8) rotate(-90)">PWM</text>
+<text class="ref" x="147.3" y="488.8" text-anchor="middle">J3 Fan 1</text>
+<rect class="part body" x="274.1" y="439.8" width="102" height="58" rx="3"/>
+<rect class="part body" x="279.0" y="487.8" width="66.8" height="8"/>
+<rect class="pinsq" x="282.0" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(290.5,452.8) rotate(-90)">GND</text>
+<rect class="pinsq" x="307.4" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(315.9,452.8) rotate(-90)">+12 V sw</text>
+<rect class="pinsq" x="332.8" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(341.3,452.8) rotate(-90)">tach 2</text>
+<rect class="pinsq" x="358.2" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(366.7,452.8) rotate(-90)">PWM</text>
+<text class="ref" x="325.1" y="488.8" text-anchor="middle">J4 Fan 2</text>
+<rect class="part body" x="451.9" y="439.8" width="102" height="58" rx="3"/>
+<rect class="part body" x="456.8" y="487.8" width="66.8" height="8"/>
+<rect class="pinsq" x="459.8" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(468.3,452.8) rotate(-90)">GND</text>
+<rect class="pinsq" x="485.2" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(493.7,452.8) rotate(-90)">+12 V sw</text>
+<rect class="pinsq" x="510.6" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(519.1,452.8) rotate(-90)">tach 3</text>
+<rect class="pinsq" x="536.0" y="459.8" width="10" height="10"/>
+<text class="pinname" transform="translate(544.5,452.8) rotate(-90)">PWM</text>
+<text class="ref" x="502.9" y="488.8" text-anchor="middle">J5 Fan 3</text>
+<rect class="part body" x="579.2" y="426.9" width="76" height="25" rx="3"/>
+<rect class="pinsq" x="586.8" y="434.4" width="10" height="10"/>
+<rect class="pinsq" x="612.2" y="434.4" width="10" height="10"/>
+<rect class="pinsq" x="637.6" y="434.4" width="10" height="10"/>
+<text class="ref" x="617.2" y="421.4" text-anchor="middle">J6 DS18B20</text></svg></div>
+  <div class="legend"><span><span class="k"></span>plated hole</span><span><span class="k" style="background:#e03131;border-color:#7a1010"></span>flash pin, never solder</span><span><span class="k" style="border-color:#f3c623;border-width:3px"></span>has a stub to an ESP-32 pad on the back</span><span>Standing resistors and the diode are drawn as a disc on the hole that takes the lower lead, with the bent upper lead arcing to its hole.</span><span>Q3 is seen from above: the grey strip is its metal tab (drain), facing the fan headers. Its printed face looks at the module, so read from the module side its legs are G, D, S left to right, the datasheet's 1-2-3, which on the grid is K, J, I.</span></div>
+  <p>Larger pads at U11, U16, Z11 and Z16 plus the one between W10 and X10 belong to the unused relay footprint. They are ordinary pads: the ground ring runs through Z11 and Z16 and row 16 through U16, and Z11 also takes the Mini-360's OUT− pin. U11 is where a bulk capacitor would go if one is ever needed; the COM pad stays bare under the module.</p>
+</section>
+
+<section>
+  <h2>Back side: chains and wires</h2>
+  <p>Drawn as seen from the top, through the board, so left stays left. A <b>chain</b> is tinned bare wire or a run of solder bridges between neighbouring holes; a <b>wire</b> is insulated hookup wire. The Mini-360 sits on the top side over W5–Z11, so only its four pins show here.</p>
+  <p>Click a wire's label on the drawing to hide that wire; the label stays, dimmed, so another click brings it back. The buttons below hide or show every wire and chain of a net, and a row of the wires table further down toggles its wire too.</p>
+  <div class="fig"><svg class="brd" viewBox="-30 -10 750 541" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="back view"><rect class="board" x="0" y="0" width="700.0" height="501.0" rx="12"/>
+<circle class="mount" cx="24.6" cy="26.1" r="15"/>
+<circle class="mount" cx="676.4" cy="26.1" r="15"/>
+<circle class="mount" cx="24.6" cy="471.7" r="15"/>
+<circle class="mount" cx="676.4" cy="471.7" r="15"/>
+<rect class="module" x="253.2" y="0" width="173.5" height="254.0"/>
+<rect class="antenna" x="293.2" y="6" width="93.5" height="50" rx="4"/>
+<text class="modlabel" x="340.0" y="187" text-anchor="middle">ESP-12F</text>
+<rect class="pad" x="249.2" y="78.8" width="12" height="10"/>
+<path class="trace" d="M253.2,83.8 L235.2,83.8 L170.0,83.8 L160.0,83.8"/>
+<rect class="pad" x="249.2" y="98.8" width="12" height="10"/>
+<path class="trace" d="M253.2,103.8 L235.2,103.8 L170.0,109.2 L160.0,109.2"/>
+<rect class="pad" x="249.2" y="118.8" width="12" height="10"/>
+<path class="trace" d="M253.2,123.8 L235.2,123.8 L170.0,134.6 L160.0,134.6"/>
+<rect class="pad" x="249.2" y="138.8" width="12" height="10"/>
+<path class="trace" d="M253.2,143.8 L235.2,143.8 L170.0,160.0 L160.0,160.0"/>
+<rect class="pad" x="249.2" y="158.8" width="12" height="10"/>
+<path class="trace" d="M253.2,163.8 L235.2,163.8 L170.0,185.4 L160.0,185.4"/>
+<rect class="pad" x="249.2" y="178.8" width="12" height="10"/>
+<path class="trace" d="M253.2,183.8 L235.2,183.8 L170.0,210.8 L160.0,210.8"/>
+<rect class="pad" x="249.2" y="198.8" width="12" height="10"/>
+<path class="trace" d="M253.2,203.8 L235.2,203.8 L170.0,236.2 L160.0,236.2"/>
+<rect class="pad" x="249.2" y="218.8" width="12" height="10"/>
+<path class="trace" d="M253.2,223.8 L235.2,223.8 L170.0,261.6 L160.0,261.6"/>
+<rect class="pad" x="418.7" y="78.8" width="12" height="10"/>
+<path class="trace" d="M426.7,83.8 L444.7,83.8 L505.6,83.8 L515.6,83.8"/>
+<rect class="pad" x="418.7" y="98.8" width="12" height="10"/>
+<path class="trace" d="M426.7,103.8 L444.7,103.8 L505.6,109.2 L515.6,109.2"/>
+<rect class="pad" x="418.7" y="118.8" width="12" height="10"/>
+<path class="trace" d="M426.7,123.8 L444.7,123.8 L505.6,134.6 L515.6,134.6"/>
+<rect class="pad" x="418.7" y="138.8" width="12" height="10"/>
+<path class="trace" d="M426.7,143.8 L444.7,143.8 L505.6,160.0 L515.6,160.0"/>
+<rect class="pad" x="418.7" y="158.8" width="12" height="10"/>
+<path class="trace" d="M426.7,163.8 L444.7,163.8 L505.6,185.4 L515.6,185.4"/>
+<rect class="pad" x="418.7" y="178.8" width="12" height="10"/>
+<path class="trace" d="M426.7,183.8 L444.7,183.8 L505.6,210.8 L515.6,210.8"/>
+<rect class="pad" x="418.7" y="198.8" width="12" height="10"/>
+<path class="trace" d="M426.7,203.8 L444.7,203.8 L505.6,236.2 L515.6,236.2"/>
+<rect class="pad" x="418.7" y="218.8" width="12" height="10"/>
+<path class="trace" d="M426.7,223.8 L444.7,223.8 L505.6,261.6 L515.6,261.6"/>
+<rect class="pad" x="287.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M292.1,254.0 L287.0,337.8"/>
+<rect class="pad" x="307.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M312.1,254.0 L312.4,337.8"/>
+<rect class="pad" x="327.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M332.1,254.0 L337.8,337.8"/>
+<rect class="pad" x="347.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M352.1,254.0 L363.2,337.8"/>
+<rect class="pad" x="367.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M372.1,254.0 L388.6,337.8"/>
+<rect class="pad" x="387.1" y="242.0" width="10" height="12"/>
+<path class="trace" d="M392.1,254.0 L414.0,337.8"/>
+<circle class="hole " cx="33.0" cy="261.6" r="4.5"/>
+<circle class="hole " cx="33.0" cy="287.0" r="4.5"/>
+<circle class="hole " cx="33.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="33.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="33.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="33.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="33.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="58.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="83.8" r="4.5"/>
+<circle class="hole " cx="33.0" cy="109.2" r="4.5"/>
+<circle class="hole " cx="33.0" cy="134.6" r="4.5"/>
+<circle class="hole " cx="33.0" cy="160.0" r="4.5"/>
+<circle class="hole " cx="33.0" cy="185.4" r="4.5"/>
+<circle class="hole " cx="33.0" cy="210.8" r="4.5"/>
+<circle class="hole " cx="33.0" cy="236.2" r="4.5"/>
+<circle class="hole " cx="58.4" cy="33.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="261.6" r="4.5"/>
+<circle class="hole " cx="58.4" cy="287.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="312.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="58.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="58.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="464.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="58.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="83.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="109.2" r="4.5"/>
+<circle class="hole " cx="58.4" cy="134.6" r="4.5"/>
+<circle class="hole " cx="58.4" cy="160.0" r="4.5"/>
+<circle class="hole " cx="58.4" cy="185.4" r="4.5"/>
+<circle class="hole " cx="58.4" cy="210.8" r="4.5"/>
+<circle class="hole " cx="58.4" cy="236.2" r="4.5"/>
+<circle class="hole " cx="83.8" cy="33.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="261.6" r="4.5"/>
+<circle class="hole " cx="83.8" cy="287.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="312.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="83.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="83.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="58.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="83.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="109.2" r="4.5"/>
+<circle class="hole " cx="83.8" cy="134.6" r="4.5"/>
+<circle class="hole " cx="83.8" cy="160.0" r="4.5"/>
+<circle class="hole " cx="83.8" cy="185.4" r="4.5"/>
+<circle class="hole " cx="83.8" cy="210.8" r="4.5"/>
+<circle class="hole " cx="83.8" cy="236.2" r="4.5"/>
+<circle class="hole " cx="109.2" cy="33.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="261.6" r="4.5"/>
+<circle class="hole " cx="109.2" cy="287.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="312.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="109.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="109.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="464.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="58.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="83.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="109.2" r="4.5"/>
+<circle class="hole " cx="109.2" cy="134.6" r="4.5"/>
+<circle class="hole " cx="109.2" cy="160.0" r="4.5"/>
+<circle class="hole " cx="109.2" cy="185.4" r="4.5"/>
+<circle class="hole " cx="109.2" cy="210.8" r="4.5"/>
+<circle class="hole " cx="109.2" cy="236.2" r="4.5"/>
+<circle class="hole " cx="134.6" cy="33.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="261.6" r="4.5"/>
+<circle class="hole " cx="134.6" cy="287.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="312.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="134.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="134.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="464.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="58.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="83.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="109.2" r="4.5"/>
+<circle class="hole " cx="134.6" cy="134.6" r="4.5"/>
+<circle class="hole " cx="134.6" cy="160.0" r="4.5"/>
+<circle class="hole " cx="134.6" cy="185.4" r="4.5"/>
+<circle class="hole " cx="134.6" cy="210.8" r="4.5"/>
+<circle class="hole " cx="134.6" cy="236.2" r="4.5"/>
+<circle class="hole " cx="160.0" cy="33.0" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="261.6" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="287.0" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="160.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="160.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="160.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="160.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="160.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="160.0" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="58.4" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="83.8" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="109.2" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="134.6" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="160.0" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="185.4" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="210.8" r="4.5"/>
+<circle class="hole stub" cx="160.0" cy="236.2" r="4.5"/>
+<circle class="hole " cx="185.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="185.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="185.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="185.4" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="210.8" cy="337.8" r="4.5"/>
+<circle class="hole stub" cx="210.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="210.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="210.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="210.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="210.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="236.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="236.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="236.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="236.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="236.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="236.2" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="261.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="261.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="261.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="261.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="261.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="261.6" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="287.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="287.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="287.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="287.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="287.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="287.0" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="312.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="312.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="312.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="312.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="312.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="312.4" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="337.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="337.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="337.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="337.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="337.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="337.8" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="363.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="363.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="363.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="363.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="363.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="363.2" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="388.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="388.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="388.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="388.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="388.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="388.6" cy="464.8" r="4.5"/>
+<circle class="hole keep" cx="414.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="414.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="414.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="414.0" cy="414.0" r="4.5"/>
+<circle class="hole " cx="414.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="414.0" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="439.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="439.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="439.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="439.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="439.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="439.4" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="464.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="464.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="464.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="464.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="464.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="464.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="490.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="490.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="490.2" cy="464.8" r="4.5"/>
+<circle class="hole " cx="515.6" cy="33.0" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="261.6" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="287.0" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="312.4" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="337.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="363.2" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="515.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="515.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="515.6" cy="464.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="58.4" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="83.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="109.2" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="134.6" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="160.0" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="185.4" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="210.8" r="4.5"/>
+<circle class="hole stub" cx="515.6" cy="236.2" r="4.5"/>
+<circle class="hole " cx="541.0" cy="33.0" r="4.5"/>
+<circle class="hole " cx="541.0" cy="261.6" r="4.5"/>
+<circle class="hole " cx="541.0" cy="287.0" r="6"/>
+<circle class="hole " cx="541.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="541.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="541.0" cy="414.0" r="6"/>
+<circle class="hole " cx="541.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="464.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="58.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="83.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="109.2" r="4.5"/>
+<circle class="hole " cx="541.0" cy="134.6" r="4.5"/>
+<circle class="hole " cx="541.0" cy="160.0" r="4.5"/>
+<circle class="hole " cx="541.0" cy="185.4" r="4.5"/>
+<circle class="hole " cx="541.0" cy="210.8" r="4.5"/>
+<circle class="hole " cx="541.0" cy="236.2" r="4.5"/>
+<circle class="hole " cx="566.4" cy="33.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="261.6" r="4.5"/>
+<circle class="hole " cx="566.4" cy="287.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="312.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="337.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="363.2" r="4.5"/>
+<circle class="hole " cx="566.4" cy="388.6" r="4.5"/>
+<circle class="hole " cx="566.4" cy="414.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="439.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="464.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="58.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="83.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="109.2" r="4.5"/>
+<circle class="hole " cx="566.4" cy="134.6" r="4.5"/>
+<circle class="hole " cx="566.4" cy="160.0" r="4.5"/>
+<circle class="hole " cx="566.4" cy="185.4" r="4.5"/>
+<circle class="hole " cx="566.4" cy="210.8" r="4.5"/>
+<circle class="hole " cx="566.4" cy="236.2" r="4.5"/>
+<circle class="hole " cx="591.8" cy="33.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="287.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="312.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="337.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="363.2" r="4.5"/>
+<circle class="hole " cx="591.8" cy="388.6" r="4.5"/>
+<circle class="hole " cx="591.8" cy="414.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="439.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="464.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="58.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="83.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="109.2" r="4.5"/>
+<circle class="hole " cx="591.8" cy="134.6" r="4.5"/>
+<circle class="hole " cx="591.8" cy="160.0" r="4.5"/>
+<circle class="hole " cx="591.8" cy="185.4" r="4.5"/>
+<circle class="hole " cx="591.8" cy="210.8" r="4.5"/>
+<circle class="hole " cx="591.8" cy="236.2" r="4.5"/>
+<circle class="hole " cx="617.2" cy="33.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="287.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="312.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="337.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="363.2" r="4.5"/>
+<circle class="hole " cx="617.2" cy="388.6" r="4.5"/>
+<circle class="hole " cx="617.2" cy="414.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="439.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="464.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="58.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="83.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="109.2" r="4.5"/>
+<circle class="hole " cx="617.2" cy="134.6" r="4.5"/>
+<circle class="hole " cx="617.2" cy="160.0" r="4.5"/>
+<circle class="hole " cx="617.2" cy="185.4" r="4.5"/>
+<circle class="hole " cx="617.2" cy="210.8" r="4.5"/>
+<circle class="hole " cx="617.2" cy="236.2" r="4.5"/>
+<circle class="hole " cx="642.6" cy="33.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="261.6" r="4.5"/>
+<circle class="hole " cx="642.6" cy="287.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="312.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="337.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="363.2" r="4.5"/>
+<circle class="hole " cx="642.6" cy="388.6" r="4.5"/>
+<circle class="hole " cx="642.6" cy="414.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="439.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="464.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="58.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="83.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="109.2" r="4.5"/>
+<circle class="hole " cx="642.6" cy="134.6" r="4.5"/>
+<circle class="hole " cx="642.6" cy="160.0" r="4.5"/>
+<circle class="hole " cx="642.6" cy="185.4" r="4.5"/>
+<circle class="hole " cx="642.6" cy="210.8" r="4.5"/>
+<circle class="hole " cx="642.6" cy="236.2" r="4.5"/>
+<circle class="hole " cx="668.0" cy="261.6" r="4.5"/>
+<circle class="hole " cx="668.0" cy="287.0" r="6"/>
+<circle class="hole " cx="668.0" cy="312.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="337.8" r="4.5"/>
+<circle class="hole " cx="668.0" cy="363.2" r="4.5"/>
+<circle class="hole " cx="668.0" cy="388.6" r="4.5"/>
+<circle class="hole " cx="668.0" cy="414.0" r="6"/>
+<circle class="hole " cx="668.0" cy="439.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="58.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="83.8" r="4.5"/>
+<circle class="hole " cx="668.0" cy="109.2" r="4.5"/>
+<circle class="hole " cx="668.0" cy="134.6" r="4.5"/>
+<circle class="hole " cx="668.0" cy="160.0" r="4.5"/>
+<circle class="hole " cx="668.0" cy="185.4" r="4.5"/>
+<circle class="hole " cx="668.0" cy="210.8" r="4.5"/>
+<circle class="hole " cx="668.0" cy="236.2" r="4.5"/>
+<text class="pin" x="174.0" y="78.8" text-anchor="start">RST</text>
+<text class="pin" x="174.0" y="104.2" text-anchor="start">ADC</text>
+<text class="pin" x="174.0" y="129.6" text-anchor="start">EN</text>
+<text class="pin" x="174.0" y="155.0" text-anchor="start">IO16</text>
+<text class="pin" x="174.0" y="180.4" text-anchor="start">IO14</text>
+<text class="pin" x="174.0" y="205.8" text-anchor="start">IO12</text>
+<text class="pin" x="174.0" y="231.2" text-anchor="start">IO13</text>
+<text class="pin" x="174.0" y="256.6" text-anchor="start">3V3</text>
+<text class="pin" x="501.6" y="78.8" text-anchor="end">TXD</text>
+<text class="pin" x="501.6" y="104.2" text-anchor="end">RXD</text>
+<text class="pin" x="501.6" y="129.6" text-anchor="end">IO5</text>
+<text class="pin" x="501.6" y="155.0" text-anchor="end">IO4</text>
+<text class="pin" x="501.6" y="180.4" text-anchor="end">IO0</text>
+<text class="pin" x="501.6" y="205.8" text-anchor="end">IO2</text>
+<text class="pin" x="501.6" y="231.2" text-anchor="end">IO15</text>
+<text class="pin" x="501.6" y="256.6" text-anchor="end">GND</text>
+<text class="pin" transform="translate(290.5,328.8) rotate(-90)">CS0</text>
+<text class="pin" transform="translate(315.9,328.8) rotate(-90)">MISO</text>
+<text class="pin" transform="translate(341.3,328.8) rotate(-90)">IO9</text>
+<text class="pin" transform="translate(366.7,328.8) rotate(-90)">IO10</text>
+<text class="pin" transform="translate(392.1,328.8) rotate(-90)">MOSI</text>
+<text class="pin" transform="translate(417.5,328.8) rotate(-90)">SCLK</text>
+<text class="grid" x="33.0" y="517.0" text-anchor="middle">A</text>
+<text class="grid" x="58.4" y="517.0" text-anchor="middle">B</text>
+<text class="grid" x="83.8" y="517.0" text-anchor="middle">C</text>
+<text class="grid" x="109.2" y="517.0" text-anchor="middle">D</text>
+<text class="grid" x="134.6" y="517.0" text-anchor="middle">E</text>
+<text class="grid" x="160.0" y="517.0" text-anchor="middle">F</text>
+<text class="grid" x="185.4" y="517.0" text-anchor="middle">G</text>
+<text class="grid" x="210.8" y="517.0" text-anchor="middle">H</text>
+<text class="grid" x="236.2" y="517.0" text-anchor="middle">I</text>
+<text class="grid" x="261.6" y="517.0" text-anchor="middle">J</text>
+<text class="grid" x="287.0" y="517.0" text-anchor="middle">K</text>
+<text class="grid" x="312.4" y="517.0" text-anchor="middle">L</text>
+<text class="grid" x="337.8" y="517.0" text-anchor="middle">M</text>
+<text class="grid" x="363.2" y="517.0" text-anchor="middle">N</text>
+<text class="grid" x="388.6" y="517.0" text-anchor="middle">O</text>
+<text class="grid" x="414.0" y="517.0" text-anchor="middle">P</text>
+<text class="grid" x="439.4" y="517.0" text-anchor="middle">Q</text>
+<text class="grid" x="464.8" y="517.0" text-anchor="middle">R</text>
+<text class="grid" x="490.2" y="517.0" text-anchor="middle">S</text>
+<text class="grid" x="515.6" y="517.0" text-anchor="middle">T</text>
+<text class="grid" x="541.0" y="517.0" text-anchor="middle">U</text>
+<text class="grid" x="566.4" y="517.0" text-anchor="middle">V</text>
+<text class="grid" x="591.8" y="517.0" text-anchor="middle">W</text>
+<text class="grid" x="617.2" y="517.0" text-anchor="middle">X</text>
+<text class="grid" x="642.6" y="517.0" text-anchor="middle">Y</text>
+<text class="grid" x="668.0" y="517.0" text-anchor="middle">Z</text>
+<text class="grid" x="-8" y="36.5" text-anchor="end">1</text>
+<text class="grid" x="-8" y="61.9" text-anchor="end">2</text>
+<text class="grid" x="-8" y="87.3" text-anchor="end">3</text>
+<text class="grid" x="-8" y="112.7" text-anchor="end">4</text>
+<text class="grid" x="-8" y="138.1" text-anchor="end">5</text>
+<text class="grid" x="-8" y="163.5" text-anchor="end">6</text>
+<text class="grid" x="-8" y="188.9" text-anchor="end">7</text>
+<text class="grid" x="-8" y="214.3" text-anchor="end">8</text>
+<text class="grid" x="-8" y="239.7" text-anchor="end">9</text>
+<text class="grid" x="-8" y="265.1" text-anchor="end">10</text>
+<text class="grid" x="-8" y="290.5" text-anchor="end">11</text>
+<text class="grid" x="-8" y="315.9" text-anchor="end">12</text>
+<text class="grid" x="-8" y="341.3" text-anchor="end">13</text>
+<text class="grid" x="-8" y="366.7" text-anchor="end">14</text>
+<text class="grid" x="-8" y="392.1" text-anchor="end">15</text>
+<text class="grid" x="-8" y="417.5" text-anchor="end">16</text>
+<text class="grid" x="-8" y="442.9" text-anchor="end">17</text>
+<text class="grid" x="-8" y="468.3" text-anchor="end">18</text>
+<g class="net" data-net="3V3">
+<polyline class="chain" points="160.0,261.6 134.6,261.6" stroke="#d9480f"/>
+<polyline class="chain" points="160.0,261.6 160.0,287.0" stroke="#d9480f"/>
+<polyline class="chain" points="134.6,83.8 134.6,109.2 134.6,134.6 134.6,160.0 134.6,185.4 134.6,210.8 134.6,236.2 134.6,261.6" stroke="#d9480f"/>
+<polyline class="chain" points="541.0,134.6 541.0,160.0 541.0,185.4 541.0,210.8" stroke="#d9480f"/>
+<polyline class="chain" points="541.0,210.8 566.4,210.8" stroke="#d9480f"/>
+<polyline class="chain" points="591.8,287.0 566.4,287.0 566.4,261.6 566.4,236.2 566.4,210.8" stroke="#d9480f"/>
+</g>
+<g class="net" data-net="GND">
+<polyline class="chain" points="33.0,58.4 33.0,83.8 33.0,109.2 33.0,134.6 33.0,160.0 33.0,185.4 33.0,210.8 33.0,236.2 33.0,261.6 33.0,287.0 33.0,312.4 33.0,337.8 33.0,363.2 33.0,388.6 33.0,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="33.0,414.0 58.4,414.0 83.8,414.0 109.2,414.0 134.6,414.0 160.0,414.0 185.4,414.0 210.8,414.0 236.2,414.0 261.6,414.0 287.0,414.0 312.4,414.0 337.8,414.0 363.2,414.0 388.6,414.0 414.0,414.0 439.4,414.0 464.8,414.0 490.2,414.0 515.6,414.0 541.0,414.0 566.4,414.0 591.8,414.0 617.2,414.0 642.6,414.0 668.0,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="668.0,58.4 668.0,83.8 668.0,109.2 668.0,134.6 668.0,160.0 668.0,185.4 668.0,210.8 668.0,236.2 668.0,261.6 668.0,287.0 668.0,312.4 668.0,337.8 668.0,363.2 668.0,388.6 668.0,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="515.6,312.4 541.0,312.4 566.4,312.4 591.8,312.4 617.2,312.4 642.6,312.4 668.0,312.4" stroke="#1c7ed6"/>
+<polyline class="chain" points="515.6,261.6 541.0,261.6" stroke="#1c7ed6"/>
+<polyline class="chain" points="515.6,261.6 515.6,287.0 515.6,312.4" stroke="#1c7ed6"/>
+<polyline class="chain" points="58.4,134.6 33.0,134.6" stroke="#1c7ed6"/>
+<polyline class="chain" points="58.4,185.4 33.0,185.4" stroke="#1c7ed6"/>
+<polyline class="chain" points="566.4,58.4 591.8,58.4 617.2,58.4 642.6,58.4 668.0,58.4" stroke="#1c7ed6"/>
+<polyline class="chain" points="58.4,388.6 33.0,388.6" stroke="#1c7ed6"/>
+<polyline class="chain" points="109.2,464.8 109.2,439.4 109.2,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="287.0,464.8 287.0,439.4 287.0,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="464.8,464.8 464.8,439.4 464.8,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="642.6,439.4 642.6,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="566.4,388.6 566.4,414.0" stroke="#1c7ed6"/>
+<polyline class="chain" points="642.6,388.6 642.6,414.0" stroke="#1c7ed6"/>
+</g>
+<g class="net" data-net="TX">
+<polyline class="chain" points="515.6,83.8 515.6,58.4" stroke="#868e96"/>
+</g>
+<g class="net" data-net="RX">
+<polyline class="chain" points="515.6,109.2 541.0,109.2 541.0,83.8 541.0,58.4" stroke="#868e96"/>
+</g>
+<g class="net" data-net="gate">
+<polyline class="chain" points="287.0,363.2 312.4,363.2" stroke="#862e9c"/>
+</g>
+<g class="net" data-net="+12 V">
+<polyline class="chain" points="236.2,363.2 236.2,388.6" stroke="#c92a2a"/>
+<polyline class="chain" points="236.2,388.6 210.8,388.6" stroke="#c92a2a"/>
+<polyline class="chain" points="58.4,337.8 83.8,337.8" stroke="#c92a2a"/>
+</g>
+<g class="net" data-net="+12 V sw">
+<polyline class="chain" points="388.6,439.4 414.0,439.4" stroke="#e8590c"/>
+<polyline class="chain" points="414.0,439.4 439.4,439.4" stroke="#e8590c"/>
+</g>
+<g class="net" data-net="RST" data-wire="0">
+<path class="wire" d="M109.2,134.6 Q140.7,115.3 160.0,83.8" stroke="#495057" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the RST wire D5 to F3"><rect x="128.8" y="108.3" width="23.8" height="14" rx="7" stroke="#495057"/><text class="wirelbl" x="140.7" y="118.3" text-anchor="middle">RST</text></g>
+</g>
+<g class="net" data-net="IO0" data-wire="1">
+<path class="wire" d="M515.6,185.4 Q312.4,136.6 109.2,185.4" stroke="#495057" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the IO0 wire T7 to D7"><rect x="300.5" y="129.6" width="23.8" height="14" rx="7" stroke="#495057"/><text class="wirelbl" x="312.4" y="139.6" text-anchor="middle">IO0</text></g>
+</g>
+<g class="net" data-net="3V3" data-wire="2">
+<path class="wire" d="M591.8,287.0 Q375.9,235.2 160.0,287.0" stroke="#d9480f" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the 3V3 wire W11 to F11"><rect x="364.0" y="228.2" width="23.8" height="14" rx="7" stroke="#d9480f"/><text class="wirelbl" x="375.9" y="238.2" text-anchor="middle">3V3</text></g>
+</g>
+<g class="net" data-net="GND" data-wire="3">
+<path class="wire" d="M160.0,312.4 Q340.8,342.4 515.6,287.0" stroke="#1c7ed6" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the GND wire F12 to T11"><rect x="328.9" y="335.4" width="23.8" height="14" rx="7" stroke="#1c7ed6"/><text class="wirelbl" x="340.8" y="345.4" text-anchor="middle">GND</text></g>
+</g>
+<g class="net" data-net="IO16" data-wire="4">
+<path class="wire" d="M160.0,160.0 Q119.4,217.4 109.2,287.0" stroke="#a61e4d" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the IO16 wire F6 to D11"><rect x="105.2" y="210.4" width="28.4" height="14" rx="7" stroke="#a61e4d"/><text class="wirelbl" x="119.4" y="220.4" text-anchor="middle">IO16</text></g>
+</g>
+<g class="net" data-net="Q2 base" data-wire="5">
+<path class="wire" d="M83.8,287.0 Q316.0,383.0 566.4,363.2" stroke="#d6336c" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the Q2 base wire C11 to V14"><rect x="294.9" y="376.0" width="42.2" height="14" rx="7" stroke="#d6336c"/><text class="wirelbl" x="316.0" y="386.0" text-anchor="middle">Q2 base</text></g>
+</g>
+<g class="net" data-net="IO12" data-wire="6">
+<path class="wire" d="M160.0,210.8 Q132.1,271.3 134.6,337.8" stroke="#2f9e44" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the IO12 wire F8 to E13"><rect x="117.9" y="264.3" width="28.4" height="14" rx="7" stroke="#2f9e44"/><text class="wirelbl" x="132.1" y="274.3" text-anchor="middle">IO12</text></g>
+</g>
+<g class="net" data-net="Q1 base" data-wire="7">
+<path class="wire" d="M134.6,312.4 Q382.5,398.8 642.6,363.2" stroke="#5c940d" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the Q1 base wire E12 to Y14"><rect x="361.4" y="391.8" width="42.2" height="14" rx="7" stroke="#5c940d"/><text class="wirelbl" x="382.5" y="401.8" text-anchor="middle">Q1 base</text></g>
+</g>
+<g class="net" data-net="gate" data-wire="8">
+<path class="wire" d="M566.4,337.8 Q436.4,320.0 312.4,363.2" stroke="#862e9c" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the gate wire V13 to L14"><rect x="422.2" y="313.0" width="28.4" height="14" rx="7" stroke="#862e9c"/><text class="wirelbl" x="436.4" y="323.0" text-anchor="middle">gate</text></g>
+</g>
+<g class="net" data-net="gate" data-wire="9">
+<path class="wire" d="M312.4,363.2 Q245.9,360.7 185.4,388.6" stroke="#862e9c" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the gate wire L14 to G15"><rect x="231.7" y="353.7" width="28.4" height="14" rx="7" stroke="#862e9c"/><text class="wirelbl" x="245.9" y="363.7" text-anchor="middle">gate</text></g>
+</g>
+<g class="net" data-net="+12 V" data-wire="10">
+<path class="wire" d="M58.4,337.8 Q141.2,384.5 236.2,388.6" stroke="#c92a2a" stroke-width="5"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the +12 V wire B13 to I15"><rect x="124.7" y="377.5" width="33.0" height="14" rx="7" stroke="#c92a2a"/><text class="wirelbl" x="141.2" y="387.5" text-anchor="middle">+12 V</text></g>
+</g>
+<g class="net" data-net="+12 V" data-wire="11">
+<path class="wire" d="M83.8,337.8 Q362.2,297.2 591.8,134.6" stroke="#c92a2a" stroke-width="5"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the +12 V wire C13 to W5"><rect x="345.7" y="290.2" width="33.0" height="14" rx="7" stroke="#c92a2a"/><text class="wirelbl" x="362.2" y="300.2" text-anchor="middle">+12 V</text></g>
+</g>
+<g class="net" data-net="+12 V sw" data-wire="12">
+<path class="wire" d="M261.6,363.2 Q316.0,416.5 388.6,439.4" stroke="#e8590c" stroke-width="5"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the +12 V sw wire J14 to O17"><rect x="292.6" y="409.5" width="46.8" height="14" rx="7" stroke="#e8590c"/><text class="wirelbl" x="316.0" y="419.5" text-anchor="middle">+12 V sw</text></g>
+</g>
+<g class="net" data-net="+12 V sw" data-wire="13">
+<path class="wire" d="M388.6,439.4 Q258.6,421.6 134.6,464.8" stroke="#e8590c" stroke-width="5"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the +12 V sw wire O17 to E18"><rect x="235.2" y="414.6" width="46.8" height="14" rx="7" stroke="#e8590c"/><text class="wirelbl" x="258.6" y="424.6" text-anchor="middle">+12 V sw</text></g>
+</g>
+<g class="net" data-net="+12 V sw" data-wire="14">
+<path class="wire" d="M414.0,439.4 Q360.2,439.9 312.4,464.8" stroke="#e8590c" stroke-width="5"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the +12 V sw wire P17 to L18"><rect x="336.8" y="432.9" width="46.8" height="14" rx="7" stroke="#e8590c"/><text class="wirelbl" x="360.2" y="442.9" text-anchor="middle">+12 V sw</text></g>
+</g>
+<g class="net" data-net="+12 V sw" data-wire="15">
+<path class="wire" d="M439.4,439.4 Q461.8,458.2 490.2,464.8" stroke="#e8590c" stroke-width="5"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the +12 V sw wire Q17 to S18"><rect x="438.4" y="451.2" width="46.8" height="14" rx="7" stroke="#e8590c"/><text class="wirelbl" x="461.8" y="461.2" text-anchor="middle">+12 V sw</text></g>
+</g>
+<g class="net" data-net="PWM" data-wire="16">
+<path class="wire" d="M642.6,337.8 Q576.6,389.1 541.0,464.8" stroke="#2b8a3e" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the PWM wire Y13 to U18"><rect x="564.7" y="382.1" width="23.8" height="14" rx="7" stroke="#2b8a3e"/><text class="wirelbl" x="576.6" y="392.1" text-anchor="middle">PWM</text></g>
+</g>
+<g class="net" data-net="PWM" data-wire="17">
+<path class="wire" d="M541.0,464.8 Q452.1,443.5 363.2,464.8" stroke="#2b8a3e" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the PWM wire U18 to N18"><rect x="440.2" y="436.5" width="23.8" height="14" rx="7" stroke="#2b8a3e"/><text class="wirelbl" x="452.1" y="446.5" text-anchor="middle">PWM</text></g>
+</g>
+<g class="net" data-net="PWM" data-wire="18">
+<path class="wire" d="M363.2,464.8 Q274.3,443.5 185.4,464.8" stroke="#2b8a3e" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the PWM wire N18 to G18"><rect x="262.4" y="436.5" width="23.8" height="14" rx="7" stroke="#2b8a3e"/><text class="wirelbl" x="274.3" y="446.5" text-anchor="middle">PWM</text></g>
+</g>
+<g class="net" data-net="tach 1" data-wire="19">
+<path class="wire" d="M160.0,464.8 Q377.4,342.4 515.6,134.6" stroke="#5f3dc4" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the tach 1 wire F18 to T5"><rect x="358.6" y="335.4" width="37.6" height="14" rx="7" stroke="#5f3dc4"/><text class="wirelbl" x="377.4" y="345.4" text-anchor="middle">tach 1</text></g>
+</g>
+<g class="net" data-net="tach 2" data-wire="20">
+<path class="wire" d="M337.8,464.8 Q463.3,333.7 515.6,160.0" stroke="#7048e8" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the tach 2 wire M18 to T6"><rect x="444.5" y="326.7" width="37.6" height="14" rx="7" stroke="#7048e8"/><text class="wirelbl" x="463.3" y="336.7" text-anchor="middle">tach 2</text></g>
+</g>
+<g class="net" data-net="tach 3" data-wire="21">
+<path class="wire" d="M515.6,464.8 Q371.3,282.4 160.0,185.4" stroke="#9775fa" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the tach 3 wire T18 to F7"><rect x="352.5" y="275.4" width="37.6" height="14" rx="7" stroke="#9775fa"/><text class="wirelbl" x="371.3" y="285.4" text-anchor="middle">tach 3</text></g>
+</g>
+<g class="net" data-net="DQ" data-wire="22">
+<path class="wire" d="M617.2,439.4 Q593.8,312.9 515.6,210.8" stroke="#0b7285" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the DQ wire X17 to T8"><rect x="584.2" y="305.9" width="19.2" height="14" rx="7" stroke="#0b7285"/><text class="wirelbl" x="593.8" y="315.9" text-anchor="middle">DQ</text></g>
+</g>
+<g class="net" data-net="3V3" data-wire="23">
+<path class="wire" d="M591.8,439.4 Q606.5,322.1 566.4,210.8" stroke="#d9480f" stroke-width="3"/>
+<g class="lbl" tabindex="0" role="button" aria-label="hide or show the 3V3 wire W17 to V8"><rect x="594.6" y="315.1" width="23.8" height="14" rx="7" stroke="#d9480f"/><text class="wirelbl" x="606.5" y="325.1" text-anchor="middle">3V3</text></g>
+</g></svg></div>
+  <div class="nets" id="nets" aria-label="nets"><button type="button" class="chip" data-net="3V3" aria-pressed="true"><span class="sw" style="background:#d9480f"></span>3V3</button><button type="button" class="chip" data-net="GND" aria-pressed="true"><span class="sw" style="background:#1c7ed6"></span>GND</button><button type="button" class="chip" data-net="+12 V" aria-pressed="true"><span class="sw" style="background:#c92a2a"></span>+12 V</button><button type="button" class="chip" data-net="+12 V sw" aria-pressed="true"><span class="sw" style="background:#e8590c"></span>+12 V sw</button><button type="button" class="chip" data-net="PWM" aria-pressed="true"><span class="sw" style="background:#2b8a3e"></span>PWM</button><button type="button" class="chip" data-net="tach 1" aria-pressed="true"><span class="sw" style="background:#5f3dc4"></span>tach 1</button><button type="button" class="chip" data-net="tach 2" aria-pressed="true"><span class="sw" style="background:#7048e8"></span>tach 2</button><button type="button" class="chip" data-net="tach 3" aria-pressed="true"><span class="sw" style="background:#9775fa"></span>tach 3</button><button type="button" class="chip" data-net="DQ" aria-pressed="true"><span class="sw" style="background:#0b7285"></span>DQ</button><button type="button" class="chip" data-net="IO16" aria-pressed="true"><span class="sw" style="background:#a61e4d"></span>IO16</button><button type="button" class="chip" data-net="IO12" aria-pressed="true"><span class="sw" style="background:#2f9e44"></span>IO12</button><button type="button" class="chip" data-net="gate" aria-pressed="true"><span class="sw" style="background:#862e9c"></span>gate</button><button type="button" class="chip" data-net="Q1 base" aria-pressed="true"><span class="sw" style="background:#5c940d"></span>Q1 base</button><button type="button" class="chip" data-net="Q2 base" aria-pressed="true"><span class="sw" style="background:#d6336c"></span>Q2 base</button><button type="button" class="chip" data-net="RST" aria-pressed="true"><span class="sw" style="background:#495057"></span>RST</button><button type="button" class="chip" data-net="IO0" aria-pressed="true"><span class="sw" style="background:#495057"></span>IO0</button><button type="button" class="chip" data-net="TX" aria-pressed="true"><span class="sw" style="background:#868e96"></span>TX</button><button type="button" class="chip" data-net="RX" aria-pressed="true"><span class="sw" style="background:#868e96"></span>RX</button><button type="button" class="chip" data-all="1">All</button><button type="button" class="chip" data-none="1">None</button></div>
+</section>
+
+<section>
+  <h2>Parts and where they go</h2>
+  <div class="tw"><table><thead><tr><th>Ref</th><th>Part</th><th>Holes</th><th>Note</th></tr></thead><tbody><tr><td><b>U1</b></td><td>ESP-12F Wi-Fi module</td><td>centre footprint</td><td>Solder on the footprint, antenna toward the top edge</td></tr><tr><td><b>R1</b></td><td>10 kΩ resistor</td><td><code>F3</code> RST, <code>E3</code> 3V3</td><td>RST pull-up</td></tr><tr><td><b>R2</b></td><td>10 kΩ resistor</td><td><code>F5</code> EN, <code>E5</code> 3V3</td><td>EN (CH_PD) pull-up; the module won&#x27;t start without it</td></tr><tr><td><b>R3</b></td><td>10 kΩ resistor</td><td><code>F6</code> IO16, <code>E6</code> 3V3</td><td>IO16 pull-up: keeps the 12 V switch on during boot and reset</td></tr><tr><td><b>R4</b></td><td>10 kΩ resistor</td><td><code>F7</code> IO14, <code>E7</code> 3V3</td><td>Fan 3 tach pull-up</td></tr><tr><td><b>R5</b></td><td>1 kΩ resistor</td><td><code>E13</code> IO12, <code>E12</code> Q1 base</td><td>PWM base resistor, standing below C1; IO12 reaches E13 by wire</td></tr><tr><td><b>R6</b></td><td>4.7 kΩ resistor</td><td><code>D11</code> IO16, <code>C11</code> Q2 base</td><td>Switch base resistor; IO16 reaches D11 by wire. Kept away from the RST button: a RST–IO16 bridge would reset the board every time the fans switch off</td></tr><tr><td><b>R7</b></td><td>10 kΩ resistor</td><td><code>T5</code> IO5, <code>U5</code> 3V3</td><td>Fan 1 tach pull-up</td></tr><tr><td><b>R8</b></td><td>10 kΩ resistor</td><td><code>T6</code> IO4, <code>U6</code> 3V3</td><td>Fan 2 tach pull-up</td></tr><tr><td><b>R9</b></td><td>10 kΩ resistor</td><td><code>T7</code> IO0, <code>U7</code> 3V3</td><td>IO0 pull-up: boots from flash</td></tr><tr><td><b>R10</b></td><td>4.7 kΩ resistor</td><td><code>T8</code> IO2, <code>U8</code> 3V3</td><td>1-Wire pull-up; also holds IO2 high at boot</td></tr><tr><td><b>R11</b></td><td>10 kΩ resistor</td><td><code>T9</code> IO15, <code>U10</code> GND</td><td>IO15 pull-down: boots from flash</td></tr><tr><td><b>R12</b></td><td>10 kΩ resistor</td><td><code>G15</code> gate, <code>H15</code> +12 V</td><td>MOSFET gate to source, standing in G15 one hole clear of Q3&#x27;s body; the gate reaches G15 by wire from L14. Its bent upper lead drops into H15 right at Q3&#x27;s rear corner, where the metal tab (drain) is: slide a sleeve of insulation over that lead, bring it into H15 slanting in from the G side, and keep it off the tab. A touch there joins drain to source and quietly defeats the switch</td></tr><tr><td><b>C1</b></td><td>100 nF ceramic capacitor</td><td><code>F11</code> 3V3, <code>F12</code> GND</td><td>Ceramic, 2.54 mm pitch, right under the module&#x27;s 3V3 pin; a 5 mm-pitch part would lean on R5 below it</td></tr><tr><td><b>U2</b></td><td>Mini-360 DC-DC buck module</td><td><code>W5</code> +12 V, <code>Z5</code> GND, <code>W11</code> 3V3, <code>Z11</code> GND</td><td>DSN Mini-360 3 A buck (MP2307), trimmed to 3.3 V on the bench before it goes in. IN end toward the top edge: IN+ in W5, IN− in Z5, OUT+ in W11, OUT− in Z11, so both GND pins sit in the Z ground ring. Check that before the ring is soldered: component side up, IN end up, the two pads that read 0 Ω to each other are the grounds and must be over column Z. If they are over W, turn the module round: IN+ is then at W11 and OUT+ at W5, so feed 12 V to W11 and start the 3.3 V chain from W5 (W5–V5–U5) instead. Its pads are 15.24 mm apart along the module, six pitches, which fits W5–W11, but 9.144 mm across, where W to Z is 7.62 mm: each pad sits 0.76 mm outside its hole, too far for straight header pins. Solder a stiff wire stub (a resistor lead offcut) into each pad, bend each pair 0.76 mm inward and drop the four stubs into the holes. The relay&#x27;s bare COM pad under it (between W10 and X10) stays empty. Don&#x27;t touch the trimmer once the ESP-12F is powered</td></tr><tr><td><b>D1</b></td><td>1N5819 Schottky diode</td><td><code>P16</code> GND, <code>P17</code> +12 V sw</td><td>Standing in P16 on the ground row, between the Fan 2 and Fan 3 headers; the stripe end (cathode) bends into P17 on the +12 V sw bus</td></tr><tr><td><b>Q1</b></td><td>2N3904 NPN transistor</td><td><code>Y13</code> C, <code>Y14</code> B, <code>Y15</code> E</td><td>PWM driver. C-B-E from top to bottom, C in Y13: a 2N3904 reads E-B-C with its flat face toward you and the legs down, and with the flat face toward the board&#x27;s right edge that order runs from the bottom edge up</td></tr><tr><td><b>Q2</b></td><td>2N3904 NPN transistor</td><td><code>V13</code> C, <code>V14</code> B, <code>V15</code> E</td><td>12 V switch driver; same orientation as Q1, C in V13</td></tr><tr><td><b>Q3</b></td><td>IRF9540N P-channel MOSFET</td><td><code>I14</code> S, <code>J14</code> D, <code>K14</code> G</td><td>Standing upright, printed face toward the module, metal tab (drain) toward the fan headers. Seen from the printed face with the legs down the legs are 1 G, 2 D, 3 S left to right, as the datasheet numbers them; turned to face the module that puts S in I14 and G in K14. So the flash pin K13 only ever has the 10 kΩ-fed gate beside it, never the raw 12 V, and the tab stands over row 15, where nothing it could touch would be harmed. Leave 3 mm of lead under the body. Before it goes in, lay Kapton over H15–L15 behind it and over H13–P13 and H14 in front: the flash pins and the stubs that its bare leads would otherwise face. Keep it upright; folded toward the fan headers, its tab would lie on the row-16 ground ring</td></tr><tr><td><b>SW1</b></td><td>RST tactile switch</td><td><code>D2</code> RST, <code>D5</code> RST, <code>B2</code> GND, <code>B5</code> GND</td><td>6 × 6 mm tact; two taps open the setup AP. Its pins that are joined inside the switch are the pair 6.5 mm apart: set those along the column, D2–D5 and B2–B5, so pressing it joins D to B. Turned 90°, it would hold RST at ground for good</td></tr><tr><td><b>SW2</b></td><td>FLASH tactile switch</td><td><code>D7</code> IO0, <code>D10</code> IO0, <code>B7</code> GND, <code>B10</code> GND</td><td>6 × 6 mm tact under the RST button, joined pairs along the column again, D7–D10 and B7–B10; hold it while tapping RST for the first serial flash</td></tr><tr><td><b>J1</b></td><td>serial 3-pin header</td><td><code>T2</code> TX, <code>U2</code> RX, <code>V2</code> GND</td><td>3-pin header; TX is the module&#x27;s TXD and goes to the adapter&#x27;s RX</td></tr><tr><td><b>J2</b></td><td>12 V in screw terminal</td><td><code>B13</code> +12 V, <code>B15</code> GND</td><td>5.08 mm screw terminal, wire entry toward the left edge</td></tr><tr><td><b>J3</b></td><td>Fan 1 4-pin fan header</td><td><code>D18</code> GND, <code>E18</code> +12 V sw, <code>F18</code> tach 1, <code>G18</code> PWM</td><td>4-pin fan header, latch toward the bottom edge, pin 1 (GND) on the left. A genuine Molex 47053 housing has a locator peg behind pin 2 that misses this grid: clip it, or use the peg-less clones. The plug hangs about 10 mm past the edge</td></tr><tr><td><b>J4</b></td><td>Fan 2 4-pin fan header</td><td><code>K18</code> GND, <code>L18</code> +12 V sw, <code>M18</code> tach 2, <code>N18</code> PWM</td><td>4-pin fan header, same orientation as Fan 1</td></tr><tr><td><b>J5</b></td><td>Fan 3 4-pin fan header</td><td><code>R18</code> GND, <code>S18</code> +12 V sw, <code>T18</code> tach 3, <code>U18</code> PWM</td><td>4-pin fan header</td></tr><tr><td><b>J6</b></td><td>DS18B20 3-pin header</td><td><code>W17</code> 3V3, <code>X17</code> DQ, <code>Y17</code> GND</td><td>3-pin header for the sensor lead: VDD, DQ, GND left to right. Mark pin 1: a reversed plug swaps the sensor&#x27;s supply. GND sits in Y17, the pin nearest the Z18 mounting hole, so a screw head that reaches it does no harm; a nylon screw or an M3 socket-head screw there keeps clear of it anyway</td></tr></tbody></table></div>
+  <h3>Shopping count</h3>
+  <div class="tw"><table><thead><tr><th>Qty</th><th>Part</th><th>Refs</th></tr></thead><tbody><tr><td>1</td><td>ESP-12F Wi-Fi module</td><td>U1</td></tr><tr><td>9</td><td>10 kΩ resistor</td><td>R1, R2, R3, R4, R7, R8, R9, R11, R12</td></tr><tr><td>1</td><td>1 kΩ resistor</td><td>R5</td></tr><tr><td>2</td><td>4.7 kΩ resistor</td><td>R6, R10</td></tr><tr><td>1</td><td>100 nF ceramic capacitor</td><td>C1</td></tr><tr><td>1</td><td>Mini-360 DC-DC buck module</td><td>U2</td></tr><tr><td>1</td><td>1N5819 Schottky diode</td><td>D1</td></tr><tr><td>2</td><td>2N3904 NPN transistor</td><td>Q1, Q2</td></tr><tr><td>1</td><td>IRF9540N P-channel MOSFET</td><td>Q3</td></tr><tr><td>1</td><td>RST tactile switch</td><td>SW1</td></tr><tr><td>1</td><td>FLASH tactile switch</td><td>SW2</td></tr><tr><td>1</td><td>serial 3-pin header</td><td>J1</td></tr><tr><td>1</td><td>12 V in screw terminal</td><td>J2</td></tr><tr><td>1</td><td>Fan 1 4-pin fan header</td><td>J3</td></tr><tr><td>1</td><td>Fan 2 4-pin fan header</td><td>J4</td></tr><tr><td>1</td><td>Fan 3 4-pin fan header</td><td>J5</td></tr><tr><td>1</td><td>DS18B20 3-pin header</td><td>J6</td></tr><tr><td>1</td><td>12 V supply</td><td>sized for the fans plus 0.5 A</td></tr><tr><td></td><td>hookup wire: 0.5 mm² for the 12 V paths, 0.25 mm² or wire-wrap wire for signals; tinned bare wire for the chains</td><td></td></tr></tbody></table></div>
+</section>
+
+<section>
+  <h2>Chains on the back</h2>
+  <p>Neighbouring holes joined with bare wire or solder. Ground forms a ring: column A, row 16 and column Z, plus row 12 on the right (T12–Z12), tied to the module's GND pin at T10. 3.3 V runs down column E on the left, fed from F10, and on the right from the Mini-360's OUT+ at W11 along V11–V8 to U8–U5; the 0.25 mm² wire along row 11 joins the two sides.</p>
+  <div class="tw"><table><thead><tr><th>Net</th><th>Chains</th></tr></thead><tbody><tr><td><span class="sw" style="background:#d9480f"></span>3V3</td><td><code>F10</code>–<code>E10</code>; <code>F10</code>–<code>F11</code>; <code>E3</code>–<code>E4</code>–<code>E5</code>–<code>E6</code>–<code>E7</code>–<code>E8</code>–<code>E9</code>–<code>E10</code>; <code>U5</code>–<code>U6</code>–<code>U7</code>–<code>U8</code>; <code>U8</code>–<code>V8</code>; <code>W11</code>–<code>V11</code>–<code>V10</code>–<code>V9</code>–<code>V8</code></td></tr><tr><td><span class="sw" style="background:#1c7ed6"></span>GND</td><td><code>A2</code>–<code>A3</code>–<code>A4</code>–<code>A5</code>–<code>A6</code>–<code>A7</code>–<code>A8</code>–<code>A9</code>–<code>A10</code>–<code>A11</code>–<code>A12</code>–<code>A13</code>–<code>A14</code>–<code>A15</code>–<code>A16</code>; <code>A16</code>–<code>B16</code>–<code>C16</code>–<code>D16</code>–<code>E16</code>–<code>F16</code>–<code>G16</code>–<code>H16</code>–<code>I16</code>–<code>J16</code>–<code>K16</code>–<code>L16</code>–<code>M16</code>–<code>N16</code>–<code>O16</code>–<code>P16</code>–<code>Q16</code>–<code>R16</code>–<code>S16</code>–<code>T16</code>–<code>U16</code>–<code>V16</code>–<code>W16</code>–<code>X16</code>–<code>Y16</code>–<code>Z16</code>; <code>Z2</code>–<code>Z3</code>–<code>Z4</code>–<code>Z5</code>–<code>Z6</code>–<code>Z7</code>–<code>Z8</code>–<code>Z9</code>–<code>Z10</code>–<code>Z11</code>–<code>Z12</code>–<code>Z13</code>–<code>Z14</code>–<code>Z15</code>–<code>Z16</code>; <code>T12</code>–<code>U12</code>–<code>V12</code>–<code>W12</code>–<code>X12</code>–<code>Y12</code>–<code>Z12</code>; <code>T10</code>–<code>U10</code>; <code>T10</code>–<code>T11</code>–<code>T12</code>; <code>B5</code>–<code>A5</code>; <code>B7</code>–<code>A7</code>; <code>V2</code>–<code>W2</code>–<code>X2</code>–<code>Y2</code>–<code>Z2</code>; <code>B15</code>–<code>A15</code>; <code>D18</code>–<code>D17</code>–<code>D16</code>; <code>K18</code>–<code>K17</code>–<code>K16</code>; <code>R18</code>–<code>R17</code>–<code>R16</code>; <code>Y17</code>–<code>Y16</code>; <code>V15</code>–<code>V16</code>; <code>Y15</code>–<code>Y16</code></td></tr><tr><td><span class="sw" style="background:#868e96"></span>TX</td><td><code>T3</code>–<code>T2</code></td></tr><tr><td><span class="sw" style="background:#868e96"></span>RX</td><td><code>T4</code>–<code>U4</code>–<code>U3</code>–<code>U2</code></td></tr><tr><td><span class="sw" style="background:#862e9c"></span>gate</td><td><code>K14</code>–<code>L14</code></td></tr><tr><td><span class="sw" style="background:#c92a2a"></span>+12 V</td><td><code>I14</code>–<code>I15</code>; <code>I15</code>–<code>H15</code>; <code>B13</code>–<code>C13</code></td></tr><tr><td><span class="sw" style="background:#e8590c"></span>+12 V sw</td><td><code>O17</code>–<code>P17</code>; <code>P17</code>–<code>Q17</code></td></tr></tbody></table></div>
+</section>
+
+<section>
+  <h2>Wires on the back</h2>
+  <p>"Thick" means 0.5 mm² for the 12 V paths. Everything else can be thin wire-wrap wire. A wire that lands on a hole which already holds a lead is soldered to that joint. O17 takes two thick wires, from J14 and on to Fan 1. C13 is covered by J2 on the top side, so its wire to W5 goes in before the terminal does.</p>
+  <div class="tw"><table><thead><tr><th>Net</th><th>From</th><th>To</th><th>Note</th></tr></thead><tbody><tr class="wrow" data-wire="0" data-net="RST" title="click to hide or show this wire"><td><span class="sw" style="background:#495057"></span>RST</td><td><code>D5</code></td><td><code>F3</code></td><td>thin</td></tr><tr class="wrow" data-wire="1" data-net="IO0" title="click to hide or show this wire"><td><span class="sw" style="background:#495057"></span>IO0</td><td><code>T7</code></td><td><code>D7</code></td><td>thin, under the module</td></tr><tr class="wrow" data-wire="2" data-net="3V3" title="click to hide or show this wire"><td><span class="sw" style="background:#d9480f"></span>3V3</td><td><code>W11</code></td><td><code>F11</code></td><td>0.25 mm², along row 11 just below the module; it carries the ESP&#x27;s current</td></tr><tr class="wrow" data-wire="3" data-net="GND" title="click to hide or show this wire"><td><span class="sw" style="background:#1c7ed6"></span>GND</td><td><code>F12</code></td><td><code>T11</code></td><td>thin, under the module; C1&#x27;s only ground, keep it</td></tr><tr class="wrow" data-wire="4" data-net="IO16" title="click to hide or show this wire"><td><span class="sw" style="background:#a61e4d"></span>IO16</td><td><code>F6</code></td><td><code>D11</code></td><td>thin</td></tr><tr class="wrow" data-wire="5" data-net="Q2 base" title="click to hide or show this wire"><td><span class="sw" style="background:#d6336c"></span>Q2 base</td><td><code>C11</code></td><td><code>V14</code></td><td>thin, under the module</td></tr><tr class="wrow" data-wire="6" data-net="IO12" title="click to hide or show this wire"><td><span class="sw" style="background:#2f9e44"></span>IO12</td><td><code>F8</code></td><td><code>E13</code></td><td>thin</td></tr><tr class="wrow" data-wire="7" data-net="Q1 base" title="click to hide or show this wire"><td><span class="sw" style="background:#5c940d"></span>Q1 base</td><td><code>E12</code></td><td><code>Y14</code></td><td>thin, under the module</td></tr><tr class="wrow" data-wire="8" data-net="gate" title="click to hide or show this wire"><td><span class="sw" style="background:#862e9c"></span>gate</td><td><code>V13</code></td><td><code>L14</code></td><td>thin</td></tr><tr class="wrow" data-wire="9" data-net="gate" title="click to hide or show this wire"><td><span class="sw" style="background:#862e9c"></span>gate</td><td><code>L14</code></td><td><code>G15</code></td><td>thin, under Q3</td></tr><tr class="wrow" data-wire="10" data-net="+12 V" title="click to hide or show this wire"><td><span class="sw" style="background:#c92a2a"></span>+12 V</td><td><code>B13</code></td><td><code>I15</code></td><td>thick</td></tr><tr class="wrow" data-wire="11" data-net="+12 V" title="click to hide or show this wire"><td><span class="sw" style="background:#c92a2a"></span>+12 V</td><td><code>C13</code></td><td><code>W5</code></td><td>thick, across the back under the module</td></tr><tr class="wrow" data-wire="12" data-net="+12 V sw" title="click to hide or show this wire"><td><span class="sw" style="background:#e8590c"></span>+12 V sw</td><td><code>J14</code></td><td><code>O17</code></td><td>thick; O17 also takes the Fan 1 wire, twist the two ends together</td></tr><tr class="wrow" data-wire="13" data-net="+12 V sw" title="click to hide or show this wire"><td><span class="sw" style="background:#e8590c"></span>+12 V sw</td><td><code>O17</code></td><td><code>E18</code></td><td>thick</td></tr><tr class="wrow" data-wire="14" data-net="+12 V sw" title="click to hide or show this wire"><td><span class="sw" style="background:#e8590c"></span>+12 V sw</td><td><code>P17</code></td><td><code>L18</code></td><td>thick</td></tr><tr class="wrow" data-wire="15" data-net="+12 V sw" title="click to hide or show this wire"><td><span class="sw" style="background:#e8590c"></span>+12 V sw</td><td><code>Q17</code></td><td><code>S18</code></td><td>thick</td></tr><tr class="wrow" data-wire="16" data-net="PWM" title="click to hide or show this wire"><td><span class="sw" style="background:#2b8a3e"></span>PWM</td><td><code>Y13</code></td><td><code>U18</code></td><td>thin</td></tr><tr class="wrow" data-wire="17" data-net="PWM" title="click to hide or show this wire"><td><span class="sw" style="background:#2b8a3e"></span>PWM</td><td><code>U18</code></td><td><code>N18</code></td><td>thin</td></tr><tr class="wrow" data-wire="18" data-net="PWM" title="click to hide or show this wire"><td><span class="sw" style="background:#2b8a3e"></span>PWM</td><td><code>N18</code></td><td><code>G18</code></td><td>thin</td></tr><tr class="wrow" data-wire="19" data-net="tach 1" title="click to hide or show this wire"><td><span class="sw" style="background:#5f3dc4"></span>tach 1</td><td><code>F18</code></td><td><code>T5</code></td><td>thin, under the module</td></tr><tr class="wrow" data-wire="20" data-net="tach 2" title="click to hide or show this wire"><td><span class="sw" style="background:#7048e8"></span>tach 2</td><td><code>M18</code></td><td><code>T6</code></td><td>thin, under the module</td></tr><tr class="wrow" data-wire="21" data-net="tach 3" title="click to hide or show this wire"><td><span class="sw" style="background:#9775fa"></span>tach 3</td><td><code>T18</code></td><td><code>F7</code></td><td>thin, under the module</td></tr><tr class="wrow" data-wire="22" data-net="DQ" title="click to hide or show this wire"><td><span class="sw" style="background:#0b7285"></span>DQ</td><td><code>X17</code></td><td><code>T8</code></td><td>thin</td></tr><tr class="wrow" data-wire="23" data-net="3V3" title="click to hide or show this wire"><td><span class="sw" style="background:#d9480f"></span>3V3</td><td><code>W17</code></td><td><code>V8</code></td><td>thin</td></tr></tbody></table></div>
+</section>
+
+<section class="cols">
+  <div>
+    <h2>Power</h2>
+    <p>12 V comes in at J2 and goes two ways: a thick wire to I15, bridged to the MOSFET's source at I14, for the fans, and another across the back to the Mini-360's IN+ at W5. Both of the module's GND pins sit in the Z ground ring. Its OUT+ at W11 heads the right 3.3 V chain down to V8 and U8, where the tach pull-ups hang, and a 0.25 mm² wire along row 11, just below the module, carries it to F11, C1 and the module's 3V3 pin. Nothing on this board needs 5 V.</p>
+    <p>The Mini-360 is trimmed to <b>3.3 V</b> on the bench before it is soldered in: its trimmer can be anywhere up to the input voltage, and the ESP-12F dies above 3.6 V. Its pads are 15.24 × 9.144 mm apart, six pitches along but 1.5 mm wider than W–Z across, so it stands on four short wire stubs rather than straight header pins, as its note says. There is no bulk capacitor on 3.3 V: the module's own output ceramic does that job 15 mm from the ESP's pins, and C1 sits right under its 3V3 pin, with the F12–T11 wire as its only ground. If the board ever resets during Wi-Fi bursts, a 100 µF electrolytic goes in at U11 (+) and U12, with one bridge U11–V11; the V11/V12 holes themselves are too close to the Mini-360's body for a 5 mm can.</p>
+    <h2>Order of work</h2>
+    <ol>
+      <li>Chains on the back first, while the board is bare: the ground ring as tinned 0.5 mm bare wire, not bridges alone, because the fans' return current flows through it; then row 12 on the right, the two 3.3 V columns, the +12 V sw bus O17–Q17, T3–T2 and the RX run. Leave the W11–V11 bridge open for now, and the W11→F11 wire until step 5. Before the Z column: hold the Mini-360 over W5–Z11, component side up, IN end up, and check that the two pads over column Z read 0 Ω to each other. If the tied pair is over W, turn it round and swap the feeds as its note says.</li>
+      <li>The ESP-12F on its footprint. Check each pad for bridges with a loupe.</li>
+      <li>Resistors, C1, D1, the transistors, then the switches and headers. Kapton over H13–P13, H14 and H15–L15 goes down before Q3, and R12's upper lead gets its sleeve. The thick wire from C13 to W5 goes in before the terminal, because J2 covers C13.</li>
+      <li>The Mini-360: feed it 12 V on clip leads and turn its trimmer until OUT reads 3.3 V. Solder a stiff wire stub into each of its four pads, bend them 0.76 mm inward to meet the holes, and solder it in. Put 12 V on J2, check that W11 reads 3.3 V, and only then bridge W11–V11; the W11→F11 wire follows with the others.</li>
+      <li>Wires last, shortest first. Tie the long ones under the module down with a dab of hot glue.</li>
+    </ol>
+  </div>
+  <div>
+    <h2>Before the first power-up</h2>
+    <ul>
+      <li>Q3 checked with a multimeter before soldering, printed face toward you, legs down. Short the three legs together first to discharge the gate. Diode mode, red probe on the middle leg and black on the right leg, reads about 0.5 V; swapped, it reads open. The left leg reads open to both. The tab reads 0 Ω to the middle leg. That confirms G-D-S whatever a pinout picture says.</li>
+      <li>No continuity between 3V3 and GND, nor between +12 V and GND.</li>
+      <li>G15 to H15 reads 10 kΩ, not 0 Ω, and H15 to J14 reads open: R12's upper lead is clear of Q3's tab.</li>
+      <li>W11 reads 3.3 V with 12 V on J2 before the W11–V11 bridge and the W11→F11 wire are made; after them, U8, V8 and F10 read 3.3 V too.</li>
+      <li>With 3.3 V applied: EN, RST and IO0 read 3.3 V, IO15 reads 0 V, IO2 reads 3.3 V.</li>
+      <li>Before the first flash, D0 (IO16) reads about 1.5 V, not 3.3 V: R3 and R6 form a divider onto Q2's base. Once the firmware runs, the pin sits at 3.3 V or 0 V. The fan +12 V pins read 12 V: the switch defaults to on.</li>
+    </ul>
+    <h2>Bridges that would hurt</h2>
+    <p>Pairs of neighbouring holes worth a second look with the loupe, because solder between them does more than stop the board working.</p>
+    <ul>
+      <li><b>E4–F4</b>: 3.3 V onto the ADC pin, rated for 1 V.</li>
+      <li><b>E6–F6</b>, <b>E8–F8</b>: IO16 or IO12 tied hard to 3.3 V across its resistor; the pin fights the rail every time the firmware drives it low.</li>
+      <li><b>C11–D11</b>, <b>E12–E13</b>: across R6 or R5, a GPIO straight onto a transistor base.</li>
+      <li><b>D10–D11</b>: IO0 to IO16; <b>D10–E10</b>: IO0 held high, so FLASH stops working.</li>
+      <li><b>V11–V12</b>, <b>W11–W12</b>: 3.3 V into the row-12 ground chain, a short across the Mini-360's output. <b>W17–W16</b> is the same short at the sensor header.</li>
+      <li><b>H15–H16</b>, <b>I15–I16</b>: raw 12 V to ground. <b>O17–O16</b>, <b>P17–P16</b>, <b>Q17–Q16</b>: the switched rail to ground, through Q3 as soon as power is applied.</li>
+    </ul>
+    <h2>First flash</h2>
+    <p>The D1 mini's USB and auto-reset are gone, so the first flash goes through a 3.3 V USB-serial adapter on J1: adapter RX to J1 TX, adapter TX to J1 RX, grounds joined. Power the board from its own 12 V supply, not from the adapter.</p>
+    <ol>
+      <li>Hold FLASH (SW2), tap RST (SW1), release FLASH.</li>
+      <li><code>./build.sh --upload -p /dev/ttyUSB0</code> with the usual D1 mini FQBN; the ESP-12F has the same 4 MB flash.</li>
+      <li>Tap RST. From then on the browser OTA page works as before.</li>
+    </ol>
+    <div class="warn"><p>Two taps on RST within the double-reset window open the setup AP, exactly as on the D1 mini.</p></div>
+  </div>
+</section>
+</main>
+<script>
+(() => {
+  const svg = document.querySelector('svg[aria-label="back view"]');
+  if (!svg) return;
+  const chips = [...document.querySelectorAll('#nets .chip[data-net]')];
+  const rows = [...document.querySelectorAll('tr.wrow')];
+  const offNets = new Set(), offWires = new Set();
+  const apply = () => {
+    svg.querySelectorAll('g.net').forEach(g => {
+      g.classList.toggle('off', offNets.has(g.dataset.net));
+      g.classList.toggle('woff', g.dataset.wire !== undefined && offWires.has(g.dataset.wire));
+    });
+    chips.forEach(c => { const off = offNets.has(c.dataset.net); c.classList.toggle('off', off); c.setAttribute('aria-pressed', String(!off)); });
+    rows.forEach(r => r.classList.toggle('off', offNets.has(r.dataset.net) || offWires.has(r.dataset.wire)));
+  };
+  const flip = (set, key) => { if (set.has(key)) set.delete(key); else set.add(key); apply(); };
+  chips.forEach(c => c.addEventListener('click', () => flip(offNets, c.dataset.net)));
+  document.querySelector('#nets [data-all]').addEventListener('click', () => { offNets.clear(); offWires.clear(); apply(); });
+  document.querySelector('#nets [data-none]').addEventListener('click', () => { chips.forEach(c => offNets.add(c.dataset.net)); apply(); });
+  svg.querySelectorAll('g.net[data-wire] .lbl').forEach(l => {
+    const id = l.closest('g.net').dataset.wire;
+    l.addEventListener('click', e => { e.stopPropagation(); flip(offWires, id); });
+    l.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(offWires, id); } });
+  });
+  rows.forEach(r => r.addEventListener('click', () => flip(offWires, r.dataset.wire)));
+})();
+</script>
