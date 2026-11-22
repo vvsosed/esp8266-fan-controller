@@ -8,7 +8,7 @@ from sexp import Sym, dump, find, find_all, parse
 
 class SexpTest(unittest.TestCase):
     def test_round_trip_stock_library(self):
-        text = open("/usr/share/kicad/symbols/Device.kicad_sym", encoding="utf-8").read()
+        text = pathlib.Path("/usr/share/kicad/symbols/Device.kicad_sym").read_text(encoding="utf-8")
         node = parse(text)
         self.assertEqual(node[0], Sym("kicad_symbol_lib"))
         self.assertEqual(parse(dump(node)), node)
