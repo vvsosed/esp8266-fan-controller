@@ -39,7 +39,7 @@ def check():
     nets = {}
     # one net under several names: an ESP pin and the wire that reaches it, a transistor pin and its net
     alias = {"IO14": "tach 3", "IO5": "tach 1", "IO4": "tach 2", "IO2": "DQ",
-             "Q1 C": "PWM", "Q1 B": "Q1 base", "Q2 C": "gate", "Q2 B": "Q2 base"}
+             "Q1 C": "PWM", "Q1 B": "Q1 base", "Q2 C": "gate", "Q2 B": "Q2 base", "Q4 C": "IO13", "Q4 B": "Q4 base"}
     def put(h, n):
         n = alias.get(n, n)
         if h in nets and nets[h] != n: bad.append(f"{h}: {nets[h]} and {n}")
@@ -50,7 +50,7 @@ def check():
         for h, n in pins.items():
             put(h, {"IO16": "IO16", "IO12": "IO12", "Q1 base": "Q1 base", "Q2 base": "Q2 base",
                     "G": "gate", "gate": "gate", "S": "+12 V", "D": "+12 V sw", "tach 1": "tach 1",
-                    "tach 2": "tach 2", "tach 3": "tach 3"}.get(n, n) if ref not in ("Q1", "Q2") else "GND" if n == "E" else f"{ref} {n}")
+                    "tach 2": "tach 2", "tach 3": "tach 3"}.get(n, n) if ref not in ("Q1", "Q2", "Q4") else "GND" if n == "E" else f"{ref} {n}")
     for net, chains in CHAINS.items():
         for ch in chains:
             for h in ch: put(h, net)
@@ -123,7 +123,7 @@ def parts_svg():
             out.append(f'<text class="ref" x="{cx:.1f}" y="{cy+3.5:.1f}" text-anchor="middle">{ref}</text>')
         elif kind == "to92v":
             (ax, ay), (bx, by) = xy(hs[0]), xy(hs[2]); cx, cy = ax, (ay + by) / 2
-            out.append(f'<path class="part body" d="M{cx-18:.1f},{cy-24:.1f} h24 v48 h-24 a24,24 0 0 1 0,-48 z"/>')
+            out.append(f'<path class="part body" d="M{cx-18:.1f},{cy-24:.1f} h26 v48 h-26 a10,24 0 0 1 0,-48 z"/>')   # 3.7 mm thick, round back 2.2 mm behind the leads
             out.append(f'<text class="ref" x="{cx:.1f}" y="{cy+3.5:.1f}" text-anchor="middle">{ref}</text>')
             for h, n in pins.items():
                 x, y = xy(h); out.append(f'<text class="pinname" x="{x+14:.1f}" y="{y+3:.1f}">{n}</text>')
@@ -150,6 +150,12 @@ def parts_svg():
             out.append(f'<rect class="part body" x="{cx-30:.1f}" y="{cy-30:.1f}" width="60" height="60" rx="6"/>')
             out.append(f'<circle class="button" cx="{cx:.1f}" cy="{cy:.1f}" r="16"/>')
             out.append(f'<text class="ref" x="{cx:.1f}" y="{cy+40:.1f}" text-anchor="middle">{ref} {val}</text>')
+        elif kind == "hdr3" and len({xy(h)[0] for h in hs}) == 1:   # a header standing in a column (J7)
+            x = xy(hs[0])[0]; ys = [xy(h)[1] for h in hs]; cy = (ys[0] + ys[-1]) / 2
+            out.append(f'<rect class="part body" x="{x-12.5:.1f}" y="{cy-38:.1f}" width="25" height="76" rx="3"/>')
+            for h in pins:
+                _, y = xy(h); out.append(f'<rect class="pinsq" x="{x-5:.1f}" y="{y-5:.1f}" width="10" height="10"/>')
+            out.append(f'<text class="ref" x="{x-12.5:.1f}" y="{ys[-1]+24:.1f}" text-anchor="start">{ref} {val}</text>')
         elif kind in ("hdr3", "fan"):
             xs = [xy(h)[0] for h in hs]; y = xy(hs[0])[1]
             w = 102 if kind == "fan" else 76; hh = 58 if kind == "fan" else 25
