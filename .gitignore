@@ -4,3 +4,11 @@ sketch.yaml
 git_hash.h
 __pycache__/
 docs/board/*.svg
+
+# KiCad: editor backups, caches, locks; the Gerber folder is zipped into out/gerbers.zip
+hardware/kicad/*-backups/
+hardware/kicad/fp-info-cache
+hardware/kicad/*.kicad_prl
+hardware/kicad/~*.lck
+hardware/kicad/_autosave-*
+hardware/kicad/out/gerbers/
