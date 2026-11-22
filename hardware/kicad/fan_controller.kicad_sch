@@ -5872,7 +5872,7 @@
 			(uuid "2d60c369-8d6c-5b52-ae0a-80b866d34cff")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR016")
 					(unit 1)
@@ -5951,7 +5951,7 @@
 			(uuid "9f571b7f-c8d3-5429-a050-ff7249870902")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R5")
 					(unit 1)
@@ -6028,7 +6028,7 @@
 			(uuid "b86cc298-3569-5242-a34d-97b86ee438ca")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR012")
 					(unit 1)
@@ -6109,7 +6109,7 @@
 			(uuid "a3aed12a-ec63-5456-905b-fc753f663814")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R4")
 					(unit 1)
@@ -6186,7 +6186,7 @@
 			(uuid "d18e783f-16e3-5334-a985-3b6e6861cae2")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR019")
 					(unit 1)
@@ -6267,7 +6267,7 @@
 			(uuid "1dc01893-813a-52c8-b478-9ef9fb1c65ea")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R8")
 					(unit 1)
@@ -6344,7 +6344,7 @@
 			(uuid "d2af3507-4348-57b5-94e5-8cfd38f02341")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR033")
 					(unit 1)
@@ -6426,7 +6426,7 @@
 			(uuid "c7c2a472-eb0e-5b59-80bf-c1b2534bf673")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J8")
 					(unit 1)
@@ -6507,7 +6507,7 @@
 			(uuid "09b0b422-5f3d-58a5-94e8-45234e1bcda0")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R3")
 					(unit 1)
@@ -6588,7 +6588,7 @@
 			(uuid "1ad96b29-0cdb-5cc1-bbf0-f7e9411fab9d")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "D1")
 					(unit 1)
@@ -6665,7 +6665,7 @@
 			(uuid "d916f8e7-f678-5b68-ae21-e3470b94d2f2")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR004")
 					(unit 1)
@@ -6742,7 +6742,7 @@
 			(uuid "a9f893d5-e047-5b59-b325-e23639710d98")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR034")
 					(unit 1)
@@ -6819,7 +6819,7 @@
 			(uuid "963bcfdc-d163-5734-a38b-c7efaa39a0c9")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR026")
 					(unit 1)
@@ -6896,7 +6896,7 @@
 			(uuid "d9d5f5b6-fa42-5599-863d-2d008f99845a")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR038")
 					(unit 1)
@@ -6973,7 +6973,7 @@
 			(uuid "ed798349-8623-5193-9c88-2ecd2d685b1c")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR020")
 					(unit 1)
@@ -7050,7 +7050,7 @@
 			(uuid "1c5b2563-25f2-58a9-9758-312161cd28a0")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR011")
 					(unit 1)
@@ -7127,7 +7127,7 @@
 			(uuid "d6dca142-26ed-5e2d-a21e-1954e97ff041")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR010")
 					(unit 1)
@@ -7204,7 +7204,7 @@
 			(uuid "c0e92626-2ff2-564f-b149-94fe5c4dadcb")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#FLG002")
 					(unit 1)
@@ -7281,7 +7281,7 @@
 			(uuid "f0e0bd99-00f1-514f-85c3-d9d520627939")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR027")
 					(unit 1)
@@ -7366,7 +7366,7 @@
 			(uuid "48cdb781-31c6-517c-8f3d-db7dc6ac6722")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J4")
 					(unit 1)
@@ -7443,7 +7443,7 @@
 			(uuid "c8eb632f-5f2b-576b-98f1-dc20ea7224f3")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR030")
 					(unit 1)
@@ -7525,7 +7525,7 @@
 			(uuid "c3029562-2258-5473-ac90-6aa96ffae577")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J7")
 					(unit 1)
@@ -7602,7 +7602,7 @@
 			(uuid "5df09d17-dbb2-56ac-947f-b274976eae50")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR022")
 					(unit 1)
@@ -7683,7 +7683,7 @@
 			(uuid "1ad6a330-9138-5575-af2a-96cb431a17e9")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R14")
 					(unit 1)
@@ -7764,7 +7764,7 @@
 			(uuid "680489b9-0fb4-5c5c-9419-11bb60457074")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R2")
 					(unit 1)
@@ -7844,7 +7844,7 @@
 			(uuid "73bd9f18-d8e9-5691-947a-7cab38cc7bdf")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "SW2")
 					(unit 1)
@@ -7920,7 +7920,7 @@
 			(uuid "e5c1fbb1-42c2-5500-92ed-62964d323289")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "H4")
 					(unit 1)
@@ -7997,7 +7997,7 @@
 			(uuid "f264e13a-da2a-5780-87c8-ad56246806b9")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR015")
 					(unit 1)
@@ -8074,7 +8074,7 @@
 			(uuid "7ca32cfa-097e-50de-9697-53b77e3e8e5b")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR031")
 					(unit 1)
@@ -8151,7 +8151,7 @@
 			(uuid "dbc031a2-b5cc-5281-ba6b-85f13ba42202")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR018")
 					(unit 1)
@@ -8228,7 +8228,7 @@
 			(uuid "c6ae3fe7-6f42-5bff-a3a2-819e92145841")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR007")
 					(unit 1)
@@ -8305,7 +8305,7 @@
 			(uuid "28313ad3-b47e-50cf-ac81-cb16b80533fe")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR003")
 					(unit 1)
@@ -8382,7 +8382,7 @@
 			(uuid "3b872461-1a96-5272-9666-144413a21b84")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR009")
 					(unit 1)
@@ -8463,7 +8463,7 @@
 			(uuid "d37e1e6f-95ed-57a9-8da5-dbdabed90483")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R11")
 					(unit 1)
@@ -8504,7 +8504,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_THT:TO-92_Inline"
+		(property "Footprint" "Package_TO_SOT_THT:TO-92_Inline_Wide"
 			(at 68.58 121.285 0)
 			(hide yes)
 			(show_name no)
@@ -8549,7 +8549,7 @@
 			(uuid "41bd3470-3be6-53be-b3ec-adeb7e262804")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "Q1")
 					(unit 1)
@@ -8629,7 +8629,7 @@
 			(uuid "1872e444-99ac-5bd4-a1dd-fa9089daae23")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "F1")
 					(unit 1)
@@ -8706,7 +8706,7 @@
 			(uuid "50d6089e-028a-5339-be6c-f3d8630d7e9a")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR001")
 					(unit 1)
@@ -8787,7 +8787,7 @@
 			(uuid "7901288c-f964-5165-9ff7-bcc273f7f766")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "D2")
 					(unit 1)
@@ -8864,7 +8864,7 @@
 			(uuid "88499eab-15b2-5fdd-a71a-572d10b7d103")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR028")
 					(unit 1)
@@ -8946,7 +8946,7 @@
 			(uuid "0c92d75e-a235-518d-b655-738e64e26290")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J1")
 					(unit 1)
@@ -9023,7 +9023,7 @@
 			(uuid "992d242d-1662-5fb3-a1cf-9bb5834cb99d")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR013")
 					(unit 1)
@@ -9104,7 +9104,7 @@
 			(uuid "b654013d-4d98-5066-a22a-47754b618d71")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R12")
 					(unit 1)
@@ -9189,7 +9189,7 @@
 			(uuid "612f9fad-87f8-5c86-a1ac-998594475e89")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J3")
 					(unit 1)
@@ -9266,7 +9266,7 @@
 			(uuid "8093d184-0614-5c2d-8842-4fa0a754cbd9")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR024")
 					(unit 1)
@@ -9343,7 +9343,7 @@
 			(uuid "dad57e42-b0e0-58d0-86c3-72f3c0f3057f")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR025")
 					(unit 1)
@@ -9420,7 +9420,7 @@
 			(uuid "f5404f0e-bc44-57cb-aeb8-f6e1c138aa41")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR006")
 					(unit 1)
@@ -9497,7 +9497,7 @@
 			(uuid "ab01825d-14d2-5d63-a187-ac3fc1bbfa08")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR017")
 					(unit 1)
@@ -9582,7 +9582,7 @@
 			(uuid "2e9aa9fb-28e3-54bf-858b-fbda4a990e44")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J5")
 					(unit 1)
@@ -9658,7 +9658,7 @@
 			(uuid "55a91ae6-d5f0-567f-a583-db7997d7f530")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "H2")
 					(unit 1)
@@ -9737,7 +9737,7 @@
 			(uuid "7be396c9-ad52-593e-bbaa-da0bc3826234")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "C1")
 					(unit 1)
@@ -9818,7 +9818,7 @@
 			(uuid "966f99dc-8c46-5c0e-9fcf-265a7557a624")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R9")
 					(unit 1)
@@ -9895,7 +9895,7 @@
 			(uuid "9784409d-245f-5e01-a43a-888c09b52c8a")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR014")
 					(unit 1)
@@ -9972,7 +9972,7 @@
 			(uuid "59fe9adc-0577-5d76-aa2f-68f8136acc0c")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR035")
 					(unit 1)
@@ -10048,7 +10048,7 @@
 			(uuid "2f2cc8cf-3e13-5df5-8d68-3586fdc08158")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "H1")
 					(unit 1)
@@ -10125,7 +10125,7 @@
 			(uuid "0e0e35dd-3d54-5946-8b95-cf99be65acb0")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR021")
 					(unit 1)
@@ -10202,7 +10202,7 @@
 			(uuid "89492a32-edf2-58f8-9e7c-3b3517f3791a")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR032")
 					(unit 1)
@@ -10282,7 +10282,7 @@
 			(uuid "66601df4-f3d4-556e-a070-c837237719ce")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "SW1")
 					(unit 1)
@@ -10359,7 +10359,7 @@
 			(uuid "867114c2-ea93-5459-ada9-dfaf4772eadb")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR039")
 					(unit 1)
@@ -10444,7 +10444,7 @@
 			(uuid "d208f2e2-1424-5431-b152-c9e66033c48d")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "U2")
 					(unit 1)
@@ -10525,7 +10525,7 @@
 			(uuid "421be564-df1d-5c03-9890-c3b6df4773d9")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R7")
 					(unit 1)
@@ -10602,7 +10602,7 @@
 			(uuid "67d8115a-6e98-5b31-acc1-66dd19acb2ca")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#FLG004")
 					(unit 1)
@@ -10679,7 +10679,7 @@
 			(uuid "3eab976d-dd1c-5fa4-a0c6-3922058f1fab")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#FLG003")
 					(unit 1)
@@ -10720,7 +10720,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_THT:TO-92_Inline"
+		(property "Footprint" "Package_TO_SOT_THT:TO-92_Inline_Wide"
 			(at 213.36 78.105 0)
 			(hide yes)
 			(show_name no)
@@ -10765,7 +10765,7 @@
 			(uuid "2b2d9770-2ff0-5e1e-ad10-f0c9a057a147")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "Q2")
 					(unit 1)
@@ -10842,7 +10842,7 @@
 			(uuid "636552ec-89dc-57dd-9dcc-71b5f633f45f")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR023")
 					(unit 1)
@@ -10923,7 +10923,7 @@
 			(uuid "cf1d78e3-03dc-5da3-9af3-3333c02896a0")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R1")
 					(unit 1)
@@ -11000,7 +11000,7 @@
 			(uuid "d0d9cea9-f3f4-56a6-8118-1f07f26d4b69")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#FLG001")
 					(unit 1)
@@ -11079,7 +11079,7 @@
 			(uuid "9f8e64c6-3040-5461-902b-674f3eeafd84")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R6")
 					(unit 1)
@@ -11156,7 +11156,7 @@
 			(uuid "ca43acc8-e5c2-5b77-83f0-6f18b761171d")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR036")
 					(unit 1)
@@ -11233,7 +11233,7 @@
 			(uuid "6e841c91-9341-57ee-9ad2-7a5d94da5834")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR029")
 					(unit 1)
@@ -11310,7 +11310,7 @@
 			(uuid "f84995de-3077-505a-ac4d-b29a3755ee27")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR008")
 					(unit 1)
@@ -11386,7 +11386,7 @@
 			(uuid "919622d0-1c8e-518d-ab6d-1f7ae3bbd2eb")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "H3")
 					(unit 1)
@@ -11466,7 +11466,7 @@
 			(uuid "b93d40be-6d43-5be6-bb89-1155b9df1b3b")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J2")
 					(unit 1)
@@ -11543,7 +11543,7 @@
 			(uuid "71e64718-f9b4-57a3-9819-579c5ee11747")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR002")
 					(unit 1)
@@ -11630,7 +11630,7 @@
 			(uuid "cafd99cc-80d8-521e-9b7b-d5e16d14fcb8")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "Q3")
 					(unit 1)
@@ -11711,7 +11711,7 @@
 			(uuid "5708bc04-51c3-5339-b466-b7889e7f2720")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R10")
 					(unit 1)
@@ -11852,7 +11852,7 @@
 			(uuid "81948415-d26b-5324-afb2-3f75262b88ff")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "U1")
 					(unit 1)
@@ -11931,7 +11931,7 @@
 			(uuid "c890c13c-8b5b-5994-ac81-b6c74ee8493f")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "R13")
 					(unit 1)
@@ -11973,7 +11973,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_THT:TO-92_Inline"
+		(property "Footprint" "Package_TO_SOT_THT:TO-92_Inline_Wide"
 			(at 241.3 116.205 0)
 			(hide yes)
 			(show_name no)
@@ -12018,7 +12018,7 @@
 			(uuid "36d45933-dc3d-5eb0-97e4-25a1f79c29f1")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "Q4")
 					(unit 1)
@@ -12095,7 +12095,7 @@
 			(uuid "545ec11e-cce3-5969-a4e2-a8a9dba014dd")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR037")
 					(unit 1)
@@ -12177,7 +12177,7 @@
 			(uuid "57ab2327-6b64-5031-995b-54c758e5e7fb")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "J6")
 					(unit 1)
@@ -12254,7 +12254,7 @@
 			(uuid "78d3397a-5f9a-56f0-b1f5-3439ac496d95")
 		)
 		(instances
-			(project ""
+			(project "fan_controller"
 				(path "/5e1f9c84-7f0a-4b2e-8d31-0fa0c0a7e01a"
 					(reference "#PWR005")
 					(unit 1)

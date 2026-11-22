@@ -55,7 +55,7 @@ KIND = {
     "res": ("Device:R", "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal", ["1", "2"]),
     "cap": ("Device:C", "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P2.50mm", ["1", "2"]),
     "diode": ("Diode:1N5819", "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", ["2", "1"]),     # anode hole first
-    "to92v": ("Transistor_BJT:2N3904", "Package_TO_SOT_THT:TO-92_Inline", ["3", "2", "1"]),   # C, B, E
+    "to92v": ("Transistor_BJT:2N3904", "Package_TO_SOT_THT:TO-92_Inline_Wide", ["3", "2", "1"]),   # C, B, E
     "to220": ("Transistor_FET:IRF9540N", "Package_TO_SOT_THT:TO-220-3_Vertical", ["3", "2", "1"]),   # S, D, G
     "tact": ("Switch:SW_Push", "Button_Switch_THT:SW_PUSH_6mm", ["1", "1", "2", "2"]),
     "hdr3": ("Connector_Generic:Conn_01x03", "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical", ["1", "2", "3"]),

@@ -253,3 +253,89 @@ junction(188, 126)
 junction(190, 126)
 power("GND", 182, 126)
 flag(190, 126, 180)
+
+# ---------------------------------------------------------------- PCB
+# Millimetres, origin at the board's top-left corner, y down. Rotations are KiCad's: degrees
+# counter-clockwise as seen from the front. All parts sit on the front.
+BOARD = (70.0, 50.0)
+HOLES = {"H1": (4.0, 4.0), "H2": (66.0, 4.0), "H3": (4.0, 46.0), "H4": (66.0, 46.0)}
+MODULE_KEEPOUT = (24.0, -15.0, 46.0, 20.5)      # x1, y1, x2, y2: the ESP-12F and 3 mm beside it; y1 covers the antenna overhang
+ZONE_INSET = 1.0
+
+PCB_PARTS = {
+    # the module, antenna past the top edge
+    "U1": (35.0, 5.0, 0),
+    # 12 V input, left edge
+    "J2": (6.0, 16.0, 90),           # pad 1 (+) at (6, 16), pad 2 (-) at (6, 10.92); wires enter from the left
+    "F1": (13.5, 19.0, 90),          # pad 1 (13.5, 21.55) from J2, pad 2 (13.5, 16.45) the fused +12V
+    "J7": (3.5, 22.5, 0),            # flow: 12V, GND, FLOW down the edge
+    "C1": (20.7, 21.5, 270),         # below the pull-ups, the closest free spot to the VCC pad
+    # pull-ups of the module's left-hand pins, in the gap between F1 and the module
+    "R1": (17.5, 10.0, 270),         # RST
+    "R2": (20.7, 10.0, 270),         # EN
+    "R3": (17.5, 20.0, 270),         # IO16
+    "R4": (18.5, 31.0, 270),         # TACH3, with the flow stage
+    "SW1": (15.9, 2.0, 0),           # RST, top-left corner next to the module's RST pad
+    # flow input stage, bottom-left
+    "Q4": (6.5, 36.0, 90),
+    "R13": (11.0, 31.0, 270),        # pin 1 (top) FLOW side, pin 2 (bottom) Q4 base
+    "R14": (14.5, 31.0, 270),
+    # 3.3 V regulator under the module, IN pads on the left
+    "U2": (35.0, 27.5, 0),
+    # PWM driver below the regulator
+    "R5": (27.5, 36.0, 0),
+    "Q1": (38.5, 38.0, 0),
+    # fans along the bottom edge, pin 1 left, latch toward the edge
+    "J3": (11.0, 46.0, 0),
+    "J4": (30.5, 46.0, 0),
+    "J5": (50.0, 46.0, 0),
+    # top-right: FLASH button, the pull-ups of the module's right-hand pins, serial header
+    "SW2": (47.6, 2.0, 0),
+    "R7": (47.9, 10.0, 270),         # TACH1
+    "R8": (51.3, 10.0, 270),         # TACH2
+    "R9": (54.7, 10.0, 270),         # IO0
+    "R10": (58.1, 10.0, 270),        # DQ
+    "R11": (61.5, 10.0, 270),        # IO15 pull-down
+    "J1": (67.2, 9.0, 0),
+    "J6": (67.2, 20.0, 0),
+    "J8": (67.2, 30.0, 0),
+    # reverse diode on the +12V trunk, then the 12 V switch, right-middle, Q3's tab toward the fans
+    "D2": (48.0, 21.8, 0),           # cathode (band) at the left pad
+    "Q2": (47.6, 31.0, 90),
+    "D1": (51.2, 30.0, 0),           # cathode at the left pad
+    "R6": (60.4, 33.0, 270),         # pin 1 (top) IO16, pin 2 Q2 base
+    "R12": (46.4, 33.2, 270),        # gate pull-up: pin 1 (top) GATE, pin 2 +12V
+    "Q3": (56.0, 35.5, 180),         # G (56, 35.5), D (53.46, 35.5), S (50.92, 35.5)
+}
+PCB_PARTS.update({ref: (x, y, 0) for ref, (x, y) in HOLES.items()})
+
+# (text, at, rotation, size mm[, side "F"/"B"[, justify "L"/"R"]]); centred unless told otherwise
+SILK = [
+    ("fan-controller", (21.8, 35.5), 90, 1.0), ("Rev 1.0", (23.4, 35.5), 90, 0.8),
+    ("https://github.com/vvsosed/esp8266-fan-controller", (35.0, 13.0), 0, 0.8, "B"),     # under the module: no pads there
+    ("RST", (11.0, 4.25), 0, 0.8), ("FLASH", (59.0, 4.25), 0, 0.8),
+    ("+", (6.0, 20.0), 0, 0.8), ("-", (6.0, 7.5), 0, 0.8),
+    ("S", (50.92, 33.0), 0, 0.8), ("D", (53.46, 33.0), 0, 0.8), ("G", (56.0, 33.0), 0, 0.8),
+]
+for n, x in ((1, 11.0), (2, 30.5), (3, 50.0)):
+    for i, name in enumerate(("G", "+", "T", "P")):
+        SILK.append((name, (x + 2.54 * i, 41.3), 0, 0.9))
+    SILK.append((f"FAN {n}", (x + 3.81, 40.0), 0, 0.8))
+for i, name in enumerate(("TX", "RX", "GND")):
+    SILK.append((name, (65.5, 9.0 + 2.54 * i), 0, 0.8, "F", "R"))
+for y0 in (20.0, 30.0):
+    for i, name in enumerate(("3V3", "DQ", "GND")):
+        SILK.append((name, (65.5, y0 + 2.54 * i), 0, 0.8, "F", "R"))
+for i, name in enumerate(("12V", "GND", "FLOW")):
+    SILK.append((name, (5.8, 22.5 + 2.54 * i), 0, 0.8, "F", "L"))
+
+# Reference designators on the silkscreen: "above" (centred over the courtyard), "hide", or (x, y, rotation)
+REF_AT = {
+    "U1": (35.0, 18.5, 0), "U2": "above", "J2": (12.5, 8.8, 0), "J7": "above", "F1": "above",
+    "SW1": (11.0, 6.0, 0), "SW2": (59.0, 6.0, 0), "C1": "above",
+    "R3": (17.5, 29.3, 0), "R4": (20.6, 34.81, 90), "Q4": (6.15, 37.65, 0),
+    "R5": (31.31, 38.1, 0), "Q1": "above",
+    "D2": (63.6, 21.3, 0), "Q2": (50.6, 26.5, 0), "D1": "above", "R6": (60.4, 42.3, 0), "R12": (46.4, 42.3, 0), "Q3": (57.9, 33.0, 0),
+    "J1": (67.2, 16.5, 0), "J6": (67.2, 17.6, 0), "J8": (67.2, 27.6, 0),
+    "J3": "hide", "J4": "hide", "J5": "hide", "H1": "hide", "H2": "hide", "H3": "hide", "H4": "hide",
+}

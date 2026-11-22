@@ -8,6 +8,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 import gen
 import netlist
+import project
 from schematic import erc, exported_nets
 from sexp import find_all, parse
 
@@ -15,7 +16,9 @@ from sexp import find_all, parse
 class SheetTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.path = gen.write_schematic(Path(tempfile.mkdtemp()) / "fan_controller.kicad_sch")
+        d = Path(tempfile.mkdtemp())
+        project.write_project(d)                 # the upgrade step names the project in each symbol's instances
+        cls.path = gen.write_schematic(d / "fan_controller.kicad_sch")
 
     def test_erc_clean(self):
         self.assertEqual(erc(self.path), [])

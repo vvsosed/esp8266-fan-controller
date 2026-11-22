@@ -5,14 +5,17 @@
 
 Change the circuit in docs/board/data.py, the geometry in layout.py; never edit the generated files.
 """
+import shutil
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import board                       # noqa: E402
 import layout                      # noqa: E402
 import netlist                     # noqa: E402
+import project                     # noqa: E402
 from schematic import Schematic, erc, exported_nets   # noqa: E402
 
 UPRIGHT = ("Device:R", "Device:C", "Device:Polyfuse")     # pins along y in the library; "Diode:" parts lie along x
@@ -72,8 +75,28 @@ def check_schematic(path):
     return problems
 
 
+def write_board(out=HERE / "fan_controller.kicad_pcb"):
+    b = board.build(netlist.PARTS, netlist.NETS, layout)
+    board.save(b, out)
+    return out
+
+
+def write_all(out=HERE, quick=False):
+    """Project files, schematic and board into `out`; later: checks and exports unless quick."""
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    project.write_project(out)
+    if out.resolve() != HERE:                                  # the project's own library next to the files
+        shutil.copy(HERE / "fan_controller.kicad_sym", out)
+        shutil.copytree(HERE / "fan_controller.pretty", out / "fan_controller.pretty", dirs_exist_ok=True)
+    sch = write_schematic(out / "fan_controller.kicad_sch")
+    pcb = write_board(out / "fan_controller.kicad_pcb")
+    return sch, pcb
+
+
 def main(argv):
-    sch = write_schematic()
+    quick = "--quick" in argv
+    sch, pcb = write_all(HERE, quick)
     problems = check_schematic(sch)
     for p in problems:
         print(p)
