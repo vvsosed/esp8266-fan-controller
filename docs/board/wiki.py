@@ -210,7 +210,8 @@ def main(outdir):
     p = ToMarkdown()
     p.feed(html)
     note = ("*Generated from `docs/board/board.html` by `docs/board/wiki.py`: edit `data.py` in the repository, "
-            "not this page. The HTML version in the repository also hides and shows wires per net.*")
+            "not this page. The [interactive version](https://vvsosed.github.io/esp8266-fan-controller/board/board.html) "
+            "hides and shows the wires and chains per net, or one wire at a time.*")
     open(f"{outdir}/{PAGE}", "w", encoding="utf-8").write(note + "\n\n" + p.markdown())
     print(PAGE, len(p.blocks), "blocks;", ", ".join(n for n, _ in VIEWS.values()))
 
