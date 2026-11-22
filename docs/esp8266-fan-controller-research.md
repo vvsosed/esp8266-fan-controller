@@ -7,9 +7,10 @@
 - An ESP8266 board (Wemos D1 mini / NodeMCU) **can control three standard 4-pin PWM PC fans** and read all three tachometers. The fans need their own 12 V supply, and the ESP only provides the control signals.
 - **PWM:** about 25 kHz, open-drain. The most robust option is one small NPN transistor or N-MOSFET whose collector feeds all three fans' PWM lines, as a motherboard's PWM splitter does. It inverts the signal; invert the duty cycle in software.
 - **Tachometers:** these **can connect directly** to GPIOs. The output is open-collector, so a pull-up to **3.3 V** (internal or an external 10 kΩ) is all that's needed.
-- **DS1820:** fits on the one remaining good pin, **GPIO2 (D4)**, with a 4.7 kΩ pull-up.
+- **DS18B20s:** both (radiator inlet and outlet) on **GPIO2 (D4)** with one 4.7 kΩ pull-up; a 1-Wire bus takes several sensors, told apart by their 64-bit ROM addresses.
 - **Fans fully off:** most fans don't stop at 0 % PWM, so **GPIO16 (D0)** drives one high-side switch that cuts all three fans' 12 V. The switch is a P-MOSFET, driven through an NPN.
-- **Pin budget:** with one shared PWM driver, D7 and D8 stay free (D8 with its boot constraint). Much more than that points toward an ESP32.
+- **Flow meter:** a Hall-effect meter's pulses go to **GPIO13 (D7)**, through an inverting NPN because the meter runs on 12 V and its output swings that high.
+- **Pin budget:** with one shared PWM driver, only D8 stays free, with its boot constraint. Anything more points toward an ESP32.
 
 ---
 
@@ -53,7 +54,7 @@ Wire colours vary by manufacturer, so always go by pin position.
 
 ### Pin budget and boot-strap constraints
 
-1 PWM + 3 tach + 1 one-wire + 1 power switch = **6 signals**. Only five ESP8266 pins are fully free of restrictions: GPIO4, 5, 12, 13, 14. Four of them are used, which leaves GPIO13 (D7) free, plus GPIO15 (D8) with its boot constraint.
+1 PWM + 3 tach + 1 one-wire + 1 power switch + 1 flow meter = **7 signals**. Only five ESP8266 pins are fully free of restrictions: GPIO4, 5, 12, 13, 14, and all five are used (GPIO13 by the flow meter), which leaves only GPIO15 (D8) with its boot constraint.
 
 | Pin | Boot requirement | Use here |
 |---|---|---|
@@ -100,7 +101,7 @@ Optional extras:
 - For long cables (several metres), lower the pull-up to about 2.2 kΩ.
 - **Why GPIO2 works:** the 1-Wire bus idles high and the sensor stays silent until addressed, so the high-at-boot requirement is always met.
 - On most D1 mini / NodeMCU boards the **onboard LED is on GPIO2** and will flicker during reads. This is harmless.
-- **Several sensors can share the same pin** (e.g. one per fan zone); each has a unique 64-bit address.
+- **Several sensors can share the same pin**; each has a unique 64-bit address. This design has two, at the radiator's inlet and outlet. The firmware reads them by address, stores each one's role, and the status page swaps the roles. Two sensors rarely agree to better than 0.5 °C, so the firmware also keeps an outlet offset, set from the page while the two are coupled at one temperature.
 - **Variants:** the original DS1820 / DS18S20 reads in 0.5 °C steps. Many parts sold as "DS1820" are actually DS18B20 (up to 0.0625 °C). The DallasTemperature library handles both.
 - **Non-blocking reads:** use `setWaitForConversion(false)` so a conversion (up to ~750 ms) doesn't stall the loop.
 
@@ -116,10 +117,11 @@ Optional extras:
 | Fan 1 tach | GPIO5 | D1 | 10 kΩ to 3.3 V |
 | Fan 2 tach | GPIO4 | D2 | 10 kΩ to 3.3 V |
 | Fan 3 tach | GPIO14 | D5 | 10 kΩ to 3.3 V |
-| DS1820 DQ | GPIO2 | D4 | 4.7 kΩ to 3.3 V |
+| DS18B20 DQ, inlet and outlet | GPIO2 | D4 | 4.7 kΩ to 3.3 V |
+| Flow meter pulses | GPIO13 | D7 | Inverting NPN: 10 kΩ from the meter's 12 V-level output into the base, collector to the pin, 10 kΩ to 3.3 V. The meter's 12 V comes from before the fans' switch |
 | Fans' 12 V switch | GPIO16 | D0 | NPN driver → P-MOSFET; 10 kΩ pull-up to 3.3 V |
 
-GPIO13 (D7) and GPIO15 (D8) are free. D8 must be low at boot.
+GPIO15 (D8) is the only free pin. It must be low at boot.
 
 ---
 
@@ -159,6 +161,32 @@ GPIO2 ──┴──────────────── DS1820 DQ
 GND   ─────────────────── DS1820 GND
 ```
 
+The second sensor's three leads go to the same three nets.
+
+**Flow meter (Hall effect, YF-S401 or similar):**
+
+The meter runs on 5–24 V and its signal wire swings between 0 V and roughly its supply, so it never goes to a GPIO directly. It is fed from the 12 V supply **before** the fans' switch, and one NPN turns its 12 V pulses into 3.3 V pulses on D7.
+
+```
+12 V ─────────────────────────────────────────────── Flow meter red (VCC, 5–24 V)
+(from the supply, before the P-MOSFET)
+
+3.3 V ──[ 10 kΩ ]──────────────────┐
+                                   ├──────────────── D7 (GPIO13)
+                                   C
+Flow meter yellow ──[ 10 kΩ ]───── B   NPN (2N3904 / BC547)
+(signal, swings 0 … 12 V)          E
+                                   │
+GND ───────────────────────────────┴──────────────── Flow meter black
+```
+
+- **How it works:** while the signal is low the NPN is off and the 10 kΩ pull-up holds D7 at 3.3 V. A pulse drives about 1.1 mA into the base ((12 V − 0.7 V) / 10 kΩ), far more than the 0.33 mA the collector has to sink, so the NPN saturates and pulls D7 to ground. D7 therefore idles high and dips once per pulse. The stage inverts the signal but not the count: the firmware counts falling edges, one per pulse.
+- **Why 12 V:** the board's 3.3 V rail is below the meter's minimum supply, and a 5 V rail does not exist on the bare-module board. Taking the 12 V from the supply side of the P-MOSFET keeps the meter counting while the fans' rail is cut.
+- **Pulse rate:** a YF-S401 gives about 5880 pulses per litre, so even 6 L/min is under 600 Hz. The 10 kΩ pull-up is fast enough for that with a few metres of cable.
+- **If the count stays at zero** with water flowing, measure the yellow wire against GND: it should sit at either about 0 V or about 12 V and flip as the rotor turns slowly. If it never rises, the meter has a bare open-collector output with no pull-up inside; add 10 kΩ from yellow to red at the meter end.
+- **Before connecting the meter:** D7's node should read 3.3 V. Touching the base resistor's free end to 12 V should drop it to about 0 V.
+- **Wire colours** on the YF-S401 are red VCC, black GND, yellow signal. As with the fans, confirm them against the part's datasheet before plugging it in.
+
 **12 V switch (one for all three fans)**
 
 A P-MOSFET sits high-side, in the fans' +12 V line (see [§1](#power)). D0 switches it through an NPN driver, because the gate sits near 12 V, out of reach of D0's 3.3 V.
@@ -189,6 +217,7 @@ GND ─────────────────────────�
 
 **Power:**
 - The 12 V supply feeds the buck converter input and the switch input: the MOSFET source.
+- The same unswitched 12 V feeds the flow meter's VCC, so it counts while the fans are off.
 - The switch output feeds all the fans' pin 2 lines: the MOSFET drain.
 - The buck converter's 5 V output feeds the board's 5 V/VIN pin.
 - All grounds are common.
@@ -207,8 +236,11 @@ GND ─────────────────────────�
 | 3 | 10 kΩ resistor | Tach pull-ups (optional with `INPUT_PULLUP`) |
 | 3 | 1 kΩ resistor | Optional tach series protection |
 | 3 | 10 nF capacitor | Optional tach filtering |
-| 1 | DS1820 / DS18B20 | Temperature sensor |
+| 2 | DS18B20 | Temperature sensors, radiator inlet and outlet |
 | 1 | 4.7 kΩ resistor | 1-Wire pull-up |
+| 1 | Hall-effect flow meter, YF-S401 or similar | 5–24 V, 0.3–6 L/min, 1/4-inch fittings, about 5880 pulses per litre |
+| 1 | NPN 2N3904 / BC547 | Flow meter level shifter on D7 |
+| 2 | 10 kΩ resistor | Its base resistor and the D7 pull-up |
 | 3 | 4-pin PC fan headers | 2.54 mm pitch, keyed |
 | 1 | NPN 2N3904 / BC547 | 12 V switch driver on D0 |
 | 1 | 4.7 kΩ resistor | Driver base resistor |
@@ -309,7 +341,9 @@ void loop() {
 - [ ] P-MOSFET rated Vgs ±20 V
 - [ ] D0 pulled **up** to 3.3 V with 10 kΩ
 - [ ] D0 isn't bridged to RST
-- [ ] DS1820 powered from VDD (not parasite mode)
+- [ ] DS18B20s powered from VDD (not parasite mode)
+- [ ] The flow meter's output never reaches a GPIO directly: it swings to the meter's supply
+- [ ] The flow meter is fed from the unswitched 12 V, not the fans' switched rail
 
 ---
 

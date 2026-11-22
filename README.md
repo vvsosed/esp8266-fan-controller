@@ -1,6 +1,6 @@
 # fan_controller
 
-ESP8266 firmware that drives three 4-pin PWM PC fans from a DS1820 temperature reading, reports each fan's RPM over serial, serves a status page over Wi-Fi, and shares its fan curve and readings over MQTT.
+ESP8266 firmware that drives three 4-pin PWM PC fans from a radiator's inlet temperature, meters the water flow and the heat the radiator sheds, keeps an energy total, reports each fan's RPM over serial, serves a status page over Wi-Fi, and shares its fan curve and readings over MQTT.
 
 Hardware design, wiring and parts list: see [`docs/esp8266-fan-controller-research.md`](docs/esp8266-fan-controller-research.md).
 
@@ -53,12 +53,13 @@ fan_controller/
 |---|---|---|---|
 | PWM, all three fans | 12 | D6 | One NPN/MOSFET open-drain stage feeds every fan's pin 4, like a PWM splitter (inverted in firmware) |
 | Fan 1 / 2 / 3 tach | 5 / 4 / 14 | D1 / D2 / D5 | 10 kΩ pull-up to **3.3 V** |
-| DS1820 data | 2 | D4 | 4.7 kΩ pull-up to 3.3 V |
+| Inlet and outlet DS18B20s, data | 2 | D4 | Both on one 1-Wire bus, 4.7 kΩ pull-up to 3.3 V. Which is which is set on the status page ([water loop](#water-loop-flow-heat-and-energy)) |
+| Flow meter pulses | 13 | D7 | The meter runs on 12 V and its pulses swing that high, so they go through an inverting NPN: 10 kΩ into the base, collector to D7 with a 10 kΩ pull-up to 3.3 V. The firmware also enables D7's internal pull-up, so a disconnected pin counts nothing |
 | Fans' 12 V switch | 16 | D0 | NPN + P-MOSFET high-side switch, 10 kΩ pull-up to 3.3 V. High or undriven = fans powered |
 
-Fans run on a separate 12 V supply, switched on and off by D0 ([wiring](docs/esp8266-fan-controller-research.md#5-wiring-per-channel)). All grounds must be common.
+Fans run on a separate 12 V supply, switched on and off by D0 ([wiring](docs/esp8266-fan-controller-research.md#5-wiring-per-channel)). The flow meter takes its 12 V before that switch, so it keeps counting with the fans off. All grounds must be common.
 
-D7 (GPIO13) and D8 (GPIO15) are free. D8 must be low at boot, so nothing wired to it may pull it high.
+D8 (GPIO15) is the only free pin. It must be low at boot, so nothing wired to it may pull it high.
 
 ---
 
@@ -165,10 +166,10 @@ arduino-cli monitor -p $PORT --config baudrate=115200
 Exit with `Ctrl+C`. Expected output, once per second:
 
 ```
-#3 +12.004 2026-10-19 03:12:58 Temp 27.4 °C -> 30 % | Fan1 840 RPM Fan2 812 RPM Fan3 865 RPM
+#3 +12.004 2026-10-19 03:12:58 In 31.2 Out 29.8 °C 2.10 L/min 280 W -> 60 % | Fan1 840 RPM Fan2 812 RPM Fan3 865 RPM
 ```
 
-Each line starts with the boot number and the seconds since boot, then the local date and time once the board has the [time from the internet](#clock-and-timestamps).
+Each line starts with the boot number and the seconds since boot, then the local date and time once the board has the [time from the internet](#clock-and-timestamps). Then the inlet and outlet temperatures (a missing sensor prints `-127.0`), the flow, the heat (`-- W` until both sensors read) and the duty the curve gave.
 
 A burst of garbage right after reset is normal: the ESP8266 bootloader prints at 74880 baud.
 
@@ -246,7 +247,27 @@ const Curve DEFAULT_CURVE = {21, 30, 20, 100};   // tLow °C, tHigh °C, pctMin 
 
 Editing them only matters until a curve has been saved from the page; after that the saved curve wins until you press **Defaults** (or flash with `wipe=all`).
 
-A missing sensor and the boot period always run the fans at 100 % (`PCT_FAILSAFE`), even if the curve's maximum is lower.
+A missing inlet sensor and the boot period always run the fans at 100 % (`PCT_FAILSAFE`), even if the curve's maximum is lower.
+
+### Water loop: flow, heat and energy
+
+Two DS18B20s on the same 1-Wire bus measure the radiator's inlet (the warm water from the PC) and its outlet, and a Hall-effect flow meter (a YF-S401 or similar) counts the water through it. From those the board shows:
+
+- **Heat**, in W: what the radiator sheds, `heat capacity × flow / 60 × (inlet − outlet)`. Positive while the water comes in warmer than it leaves; `—` on the page and `null` in the JSON while either sensor is missing.
+- **Energy**, in kWh: the heat summed since the last **Reset** on the status page, which also shows when that was. It survives restarts, firmware updates and power cuts: the total goes to RTC memory every second and to a flash log of its own once an hour and on Reset, so a power cut loses under an hour of it. Serial prints `Energy: 123 Wh, from RTC` (or `from flash`) at boot and `Energy: reset` on Reset.
+- **Flow**, in L/min.
+
+The fan curve follows the **inlet**. Which physical sensor plays which role is a saved setting: the first sensor the board ever finds becomes the inlet, so a board upgraded with one sensor keeps regulating on it, and the next one found becomes the outlet. Open **Loop** on the status page to see both sensors' addresses, and press **Swap inlet/outlet** if they are the wrong way round. A missing inlet runs the fans at 100 %, as a missing sensor always has; a missing outlet only blanks the heat. While a sensor is missing the board looks at the bus once a minute, and a sensor it has never seen takes the vacant role: a newly plugged or replaced sensor is picked up without a reboot, while a sensor that is merely unplugged keeps its role until it is back. Serial prints the roles at boot and after every change: `Loop: 4186 J/(L·K), 5880 pulses/L; inlet 28ff…, outlet 28ff…`.
+
+**Loop** also holds the two numbers the heat depends on. **Save** stores them in flash:
+
+| Field | Default | Allowed | Notes |
+|---|---|---|---|
+| Water, J/(L·K) | 4186 | 100–20000 | The coolant's heat capacity per litre: water 4186, a 30 % glycol mix about 3900. Per litre, because the meter measures litres, so density is already in it |
+| Flow meter, pulses/L | 5880 | 10–65535 | The YF-S401's figure; clones vary. To calibrate, run a measured amount of water through the meter at a steady rate while timing it, and compare the amount the board's flow implies (L/min × minutes) with what you measured: new value = old value × implied ÷ measured |
+| Outlet offset, °C | 0 | −5 to 5 | Added to the outlet reading everywhere: page, JSON, serial, graphs and the heat. Two sensors rarely agree to better than 0.5 °C, and at 2 L/min each 0.1 °C of disagreement is 14 W of false heat. To set it, tape the two sensors together or put both in one glass of water, wait a minute for the readings to settle, and press **Match outlet to inlet**: the board saves the smoothed difference of the last cycles, so the heat reads zero while the two are at one temperature |
+
+Over [MQTT](#mqtt) the readings travel in `status` (`tin`, `tout`, `flow`, `heat`, `wh`, `since`). For Home Assistant's energy dashboard, `wh / 1000` makes a `kWh` sensor with `device_class: energy` and `state_class: total`, with `last_reset` taken from `since`. Not `total_increasing`: the total is signed and falls while the heat is negative, which Home Assistant would take for a meter reset and count twice. The loop settings have no MQTT topics.
 
 **Fans fully off.** Most fans don't stop at 0 % PWM; they drop to a minimum speed instead. So when the curve gives 0 %, the firmware switches off the fans' 12 V through D0:
 
@@ -272,19 +293,19 @@ The fans keep following the temperature the whole time the access point is up.
 
 ### Status page
 
-Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access point (needs [mDNS on your PC](#5-resolve-local-names)), or the IP from serial. The page title and footer show the board's name. It shows the temperature, fan duty and each fan's RPM, updating every 2 s, a graph of the last hour, the [fan curve](#change-the-fan-curve) form, the [MQTT](#mqtt) broker settings, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`. The last two lines show the [uptime, boots and crashes](#uptime-boots-and-crashes).
+Open `http://fan-controller-XXXXXX.local/`, the same name as the setup access point (needs [mDNS on your PC](#5-resolve-local-names)), or the IP from serial. The page title and footer show the board's name. It shows the inlet and outlet temperatures, the flow, the heat and the fan duty, the energy total with its Reset button, and each fan's RPM, updating every 2 s, two graphs of the last hour, the [fan curve](#change-the-fan-curve) form, the [water loop](#water-loop-flow-heat-and-energy) settings, the [MQTT](#mqtt) broker settings, and links to the pages below. When the 12 V is [switched off](#change-the-fan-curve), the status line says `fans off`. The last two lines show the [uptime, boots and crashes](#uptime-boots-and-crashes).
 
-**The graph:**
-- Temperature (red, left °C axis) and duty (blue, right % axis), as 10-second averages.
-- Dashed lines mark the curve's ramp start and end temperatures.
-- Gaps mean the sensor wasn't read.
+**The graphs:**
+- The first: inlet (red) and outlet (pale red) on the left °C axis, duty (blue) on the right % axis, as 10-second averages. Dashed lines mark the curve's ramp start and end temperatures.
+- The second: heat (purple, W, left axis) and flow (green, L/min, right axis). Both axes fit the data and always include 0, where the heat axis has a dashed line.
+- Gaps mean a sensor wasn't read; the heat line needs both.
 - The history is kept in the board's RAM, so it starts empty after every reboot or flash.
-- Inside the ramp, duty follows temperature linearly, so the two lines often lie on top of each other. They separate where the duty is clamped at its minimum or maximum.
+- Inside the ramp, duty follows the inlet temperature linearly, so those two lines often lie on top of each other. They separate where the duty is clamped at its minimum or maximum.
 
 | Page | Use |
 |---|---|
-| `/history.json` | The graph data, oldest first: `{"step":10,"tl":21,"th":30,"t":[21.3,null,…],"d":[20,100,…]}` (`null` = no reading in that interval) |
-| `/status.json` | The live numbers as JSON, e.g. `{"t":21.3,"pct":34,"pwr":1,"rpm":[600,630,660],"up":273600,"time":1792368764,"boots":14,"booted":1792095164,"reset":"power on","crashes":1,"crash":{"at":1792090000,"up":86400,"why":"exception"}}` (`t` is `null` when the sensor is missing; `pwr` is 0 while the fans' 12 V is off; the rest is [uptime, boots and crashes](#uptime-boots-and-crashes) and the [clock](#clock-and-timestamps)) |
+| `/history.json` | The graph data, oldest first: `{"step":10,"tl":21,"th":30,"t":[31.2,null,…],"t2":[29.8,…],"w":[280,null,…],"f":[2.10,…],"d":[60,100,…]}` (`t` inlet, `t2` outlet, `w` heat W, `f` flow L/min, `d` duty; `null` = no reading in that interval) |
+| `/status.json` | The live numbers as JSON, e.g. `{"t":31.2,"tin":31.2,"tout":29.8,"flow":2.10,"heat":280,"wh":12345,"since":1792300000,"pct":60,"pwr":1,"rpm":[600,630,660],"up":273600,"time":1792368764,"boots":14,"booted":1792095164,"reset":"power on","crashes":1,"crash":{"at":1792090000,"up":86400,"why":"exception"}}` (`t` is the inlet, which the curve follows, and `null` when that sensor is missing, as `tout` is for the outlet; `heat` is `null` while either is; `wh` is the [energy total](#water-loop-flow-heat-and-energy) in Wh and `since` its last Reset, `null` if the clock wasn't set then; `pwr` is 0 while the fans' 12 V is off; the rest is [uptime, boots and crashes](#uptime-boots-and-crashes) and the [clock](#clock-and-timestamps)) |
 | `/wifi` | Switch to a different network |
 | `/info` | Chip details, and **Erase WiFi config** to forget the network (the board reboots into setup) |
 | `/update` | Upload new firmware ([Flash over Wi-Fi](#flash-over-wi-fi-from-the-browser)) |
@@ -321,11 +342,11 @@ Crashes 1 · last 15.10.2026, 07:40, exception after 1 d 00:00 up
 | `software watchdog`, `hardware watchdog` | Crash: the program got stuck |
 | `panic` | Crash: abort, failed assert, or out of memory |
 
-**Where the count is kept.** Each start adds a small record to a log in two flash sectors of their own, at the end of the 2 MB filesystem area. This firmware has no filesystem, and firmware updates don't write there. The fan curve and broker settings live elsewhere and are still written only when you save them.
+**Where the count is kept.** Each start adds a small record to a log in two flash sectors of their own, at the end of the 2 MB filesystem area. This firmware has no filesystem, and firmware updates don't write there. The fan curve, broker and loop settings live elsewhere and are still written only when you save them. The [energy total](#water-loop-flow-heat-and-energy) has a log of the same kind in the two sectors below the counter's.
 
 - **Wear:** a record goes into erased flash, so most starts erase nothing. A sector is erased once every 170 starts. Even a crash every 5 s would erase each sector only about twice an hour, years before typical flash (100,000 erases) wears out.
 - **Power cuts:** a power cut while a record is being written loses that one start, nothing more.
-- **Other flash layouts:** the counter needs the board's default layout, `4MB (FS:2MB …)`. Built with `FS:none`, it shows only the current start (`boots 1`), and serial says `Boot counter off`. If you ever add a filesystem to this firmware, keep it clear of its last two sectors.
+- **Other flash layouts:** the counter needs the board's default layout, `4MB (FS:2MB …)`. Built with `FS:none`, it shows only the current start (`boots 1`), and serial says `Boot counter off`. If you ever add a filesystem to this firmware, keep it clear of its last four sectors.
 
 **Watching it over MQTT.** Subscribe to `…/boot`. Being retained, it arrives as soon as you subscribe, again each time the board connects to the broker, and once more when the board first gets the time, to add `booted`. A rising `crashes` means a crash; a rising `boots`, or a falling `up` in `status`, means some restart.
 
@@ -382,7 +403,7 @@ for t in ramp duty boot online; do mosquitto_pub -h <broker> -p 1883 -u <user> -
 | `…/ramp/set` | to the board | `{"low":22,"high":32}`, or one key alone: `{"low":22}` |
 | `…/duty` | from the board, retained | `{"min":20,"max":100}`: duty at ramp start and end, % |
 | `…/duty/set` | to the board | `{"max":80}` etc. |
-| `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The live part of [`/status.json`](#status-page): `{"t":22.7,"pct":40,"pwr":1,"rpm":[600,630,750],"up":273600,"time":1792368764}` |
+| `…/status` | from the board, every 5 s (`MQTT_STATUS_S`) | The live part of [`/status.json`](#status-page): `{"t":31.2,"tin":31.2,"tout":29.8,"flow":2.10,"heat":280,"wh":12345,"since":1792300000,"pct":60,"pwr":1,"rpm":[600,630,750],"up":273600,"time":1792368764}` |
 | `…/boot` | from the board, retained, each time it connects and once more when it first gets the time | The rest of `/status.json`, which describes this start: `{"boots":14,"booted":1792095164,"reset":"power on","crashes":1,"crash":{"at":1792090000,"up":86400,"why":"exception"}}` ([uptime, boots and crashes](#uptime-boots-and-crashes)) |
 | `…/online` | from the board, retained | `online`, or `offline` once the board drops off (the broker sends it for the board). Erased, with the other retained topics, on [Detach](#mqtt) |
 
@@ -449,8 +470,11 @@ arduino-cli version
 | `Timed out waiting for packet header` | Lower upload speed (`baud=115200`). If it persists, hold FLASH and tap RESET to enter the bootloader manually |
 | `Port busy` / upload fails right away | Serial monitor still open; close it |
 | Board doesn't boot with hardware attached | Something wired to the free D8 (GPIO15) pulls it high (a fan's PWM line would), or GPIO0/GPIO2 held low |
-| Fans always at 100 % | Sensor not found (`-127 °C` in the log): check the DS1820 wiring and 4.7 kΩ pull-up. Also check whether the fans' PWM lines are wired straight to D6 without the transistor: then the PWM is not inverted and `setFan()` needs `analogWrite(PWM_PIN, pct * 255 / 100)` |
-| Occasional single `-127 °C` reading, fans jump to 100 % for a second | The firmware already retries a failed read once, because web traffic can disturb 1-Wire timing on the ESP8266. If it still shows up, check the DS1820 wiring, the 4.7 kΩ pull-up and the cable length |
+| Fans always at 100 % | The inlet sensor isn't read (`In -127.0` in the log): check its wiring and the 4.7 kΩ pull-up. If the other sensor reads fine, the roles may be the wrong way round: open **Loop** on the status page and press **Swap inlet/outlet**. A replacement sensor is adopted within a minute of being plugged in, as long as the old one is gone. Also check whether the fans' PWM lines are wired straight to D6 without the transistor: then the PWM is not inverted and `setFan()` needs `analogWrite(PWM_PIN, pct * 255 / 100)` |
+| Occasional single `-127.0` reading, fans jump to 100 % for a second | The firmware already retries a failed read once, because web traffic can disturb 1-Wire timing on the ESP8266. If it still shows up, check the sensor wiring, the 4.7 kΩ pull-up and the cable length |
+| Heat shows `—`, `heat` is `null` | One of the two sensors isn't read; the status line and **Loop** say which. With one sensor the board still regulates the fans, but can't compute heat or add to the energy total |
+| Flow stays `0.00 L/min` | No pulses reach D7: the meter has no supply (it needs 5–24 V; the board plan feeds it 12 V), its signal isn't going through the NPN stage, or no water is moving. D7 idles at 3.3 V and drops on every pulse |
+| Heat wanders around 0 at idle, or reads negative | Two DS18B20s can disagree by up to 0.5 °C each, most of a radiator's temperature drop at low load. Noise averages out of the energy total; a steady offset does not, so compare the two sensors in the same water before trusting small numbers. Couple the two sensors and press **Match outlet to inlet** to cancel their disagreement (see [Water loop](#water-loop-flow-heat-and-energy)) |
 | RPM reads 0 | Missing tach pull-up, fan not powered, or grounds not common. Expected while the 12 V is switched off (status page says `fans off`) |
 | Fans still spin at 0 % | The 12 V is cut only once the temperature is 0.5 °C below where the duty leaves 0 %, and then after 10 s, so wait. If the status says `fans off` and they still spin, the P-MOSFET is probably reversed: its built-in diode then passes 12 V all the time. Source goes to the 12 V supply, drain to the fans |
 | Fans never spin, even at 100 % | No 12 V reaches pin 2. Check that D0 measures 3.3 V while the firmware runs (about 1.5 V with the board in reset, where only the 10 kΩ pull-up holds it), the transistor pinouts (they differ between part numbers), and that the NPN emitter is grounded |

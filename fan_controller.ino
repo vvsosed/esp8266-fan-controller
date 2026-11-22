@@ -16,9 +16,10 @@ const char *FW_VERSION = "0.0.2";          // bump by hand on release
 #endif
 
 // ---- Pins ----
-const uint8_t PWM_PIN     = 12;            // D6 → one transistor → pin 4 of every fan (D7, D8 are free)
+const uint8_t PWM_PIN     = 12;            // D6 → one transistor → pin 4 of every fan (D8 is free, but must be low at boot)
 const uint8_t TACH_PIN[3] = {5, 4, 14};    // D1, D2, D5 ← fan pin 3 (pull-up to 3.3 V)
-const uint8_t ONEWIRE_PIN = 2;             // D4 ← DS1820 DQ (4.7 kΩ to 3.3 V)
+const uint8_t ONEWIRE_PIN = 2;             // D4 ← both DS18B20s' DQ (4.7 kΩ to 3.3 V)
+const uint8_t FLOW_PIN    = 13;            // D7 ← flow meter pulses through an inverting NPN (10 kΩ pull-up to 3.3 V)
 const uint8_t POWER_PIN   = 16;            // D0 → NPN → P-MOSFET on the fans' 12 V; HIGH (or undriven) = on
 
 // ---- Fan curve (defaults; the web page can change and save them) ----
@@ -28,6 +29,13 @@ const int PCT_FAILSAFE = 100;              // boot and sensor missing, whatever 
 const int POWER_OFF_DELAY_S = 10;          // duty must sit at 0 % this long before the 12 V is cut...
 const float POWER_HYST_C = 0.5;            // ...with the temperature this far below where the duty leaves 0 %
 Curve curve = DEFAULT_CURVE;
+
+// ---- Water loop: two DS18B20s at the radiator and a flow meter (settings saved from the page) ----
+// Heat shed by the radiator, W = heatCap × flow / 60 × (inlet − outlet): positive while the water comes
+// in warmer than it leaves. The fan curve follows the inlet, the hot side.
+struct LoopCfg { int heatCap, ppl, outMk; DeviceAddress inlet, outlet; };   // J/(L·K), flow meter pulses per litre, outlet correction in m°C, each role's sensor ROM (family byte 0 = none yet)
+const LoopCfg DEFAULT_LOOP = {4186, 5880, 0, {}, {}};   // water; a YF-S401; no correction; no sensors assigned until they are found
+LoopCfg loopCfg = DEFAULT_LOOP;
 
 // ---- Wi-Fi ----
 char hostname[24];                         // fan-controller-<chip id>: DHCP, http://<name>.local/ and setup AP; set in setup()
@@ -49,9 +57,9 @@ bool timeSynced;                           // SNTP has set the clock this boot
 uint32_t bootedAt;                         // UTC s this boot started, from the first sync; 0 = not yet known
 bool bootDue;                              // the clock was set: send MQTT boot again, now with booted
 
-// ---- Boot counter (see countBoot()) ----
-// BootRec and CrashRtc are defined up here because the IDE inserts the sketch's function prototypes,
-// some of which take one, just above the tach ISRs below.
+// ---- Boot counter and energy total (see countBoot() and loadEnergy()) ----
+// These types are defined up here because the IDE inserts the sketch's function prototypes, some of
+// which take one, just above the tach ISRs below.
 struct BootRec {                           // one flash log record
     uint32_t boots, crashes;
     uint32_t crashAt, crashUp, crashWhy;   // the last crash: UTC s (0 = unknown), s it had been up, RESET_NAME index
@@ -63,11 +71,30 @@ struct CrashRtc { uint32_t reason, magic, at, up; };
 BootRec boots;                             // all boots counted, this one included, and the last crash
 const char *resetReason = "unknown";       // what started this boot
 
-// ---- Tach counting ----
-volatile uint32_t pulses[3];
+// An append-only log of fixed-size records in a pair of flash sectors at the end of the filesystem
+// area: sector 0 is fromEnd sectors before that end, sector 1 the one after it. A record is whole
+// uint32_t words: word 0 orders them (the greatest is the newest), the last word is the check, the
+// rest is payload. ok: a rule a valid record must also pass, or nullptr. See logAppend().
+struct FlashLog { int fromEnd, size; uint32_t magic; bool (*ok)(const void *rec); };
+const int LOG_REC_MAX = 32;                // bytes; the scans' temporary record
+
+// The energy total: mJ since the last Reset, signed, as two words (a 64-bit member would be padded to
+// 8 bytes), and when that Reset was (UTC s; 0 = the clock wasn't set then)
+struct EnergyRec { uint32_t seq, since, mjLo, mjHi, check; };   // flash log record: 20 B, 204 per sector
+struct EnergyRtc { uint32_t magic, since, mjLo, mjHi; };        // RTC copy, rewritten every cycle
+int64_t energyMj;                          // mJ (= W × ms) since the last Reset; signed
+uint32_t energySince;                      // UTC s of that Reset; 0 = the clock wasn't set then
+int32_t energyLoggedWh;                    // the Wh in the newest flash record...
+uint32_t energySeq;                        // ...its sequence number...
+int energySec, energyAt = -1;              // ...and its slot; at -1 = no record yet
+bool energyLogOn;                          // the flash layout has the four log sectors
+
+// ---- Tach and flow counting ----
+volatile uint32_t pulses[3], flowPulses;
 void IRAM_ATTR t0() { pulses[0]++; }
 void IRAM_ATTR t1() { pulses[1]++; }
 void IRAM_ATTR t2() { pulses[2]++; }
+void IRAM_ATTR tFlow() { flowPulses++; }
 void (*isr[3])() = {t0, t1, t2};
 
 OneWire oneWire(ONEWIRE_PIN);
@@ -77,27 +104,44 @@ WiFiClient net;
 PubSubClient mqtt(net);
 
 // ---- Last readings, served by the web page ----
-float lastTemp = DEVICE_DISCONNECTED_C;
+float lastTemp = DEVICE_DISCONNECTED_C;    // inlet: the control temperature ("t" in the JSON)
+bool cycled;                               // the 1 s block has run once; before that nothing is "missing" yet
+float lastTout = DEVICE_DISCONNECTED_C;    // outlet
+float lastFlow;                            // L/min
+float dtEma;                               // inlet − raw outlet, smoothed over the last cycles that read both: what Match saves as the offset
+int dtN;                                   // consecutive cycles that read both sensors; Match needs 30
+int32_t lastHeat = INT32_MIN;              // W; INT32_MIN = a sensor was missing
 int lastPct = PCT_FAILSAFE;
 uint32_t lastRpm[3];
 bool fanPower = true;                      // 12 V rail state
 
 // ---- History for the graph (RAM only, cleared on reboot) ----
 const int HIST_N = 360, HIST_STEP = 10;    // 1 h of 10-cycle (≈10 s) averages
-struct Sample { int16_t t10; uint8_t pct; };   // t10 = °C×10, INT16_MIN = no sensor reading
-Sample hist[HIST_N];                       // ~1.4 KB
+struct Sample {                            // INT16_MIN = no reading in that interval
+    int16_t t10, t2_10;                    // inlet, outlet: °C×10
+    int16_t w;                             // heat, W, over the cycles that had both sensors
+    uint16_t f100;                         // flow, L/min×100
+    uint8_t pct;
+};
+Sample hist[HIST_N];                       // 10 B each: ~3.6 KB
 int histHead, histCount;                   // next write slot, valid samples
 
-void histAdd(float t, int pct) {           // called once per 1 s cycle
-    static float tSum;
-    static int nT, pctSum, n;
+void histAdd(float t, float t2, bool haveW, float w, float f, int pct) {   // called once per 1 s cycle
+    static float tSum, t2Sum, wSum, fSum;
+    static int nT, nT2, nW, pctSum, n;
     if (t != DEVICE_DISCONNECTED_C) { tSum += t; nT++; }
+    if (t2 != DEVICE_DISCONNECTED_C) { t2Sum += t2; nT2++; }
+    if (haveW) { wSum += w; nW++; }        // averaged in float: integer division would pull a negative mean toward zero
+    fSum += f;
     pctSum += pct;
     if (++n < HIST_STEP) return;
-    hist[histHead] = {(int16_t)(nT ? lroundf(tSum / nT * 10) : INT16_MIN), (uint8_t)(pctSum / n)};
+    long wAvg = nW ? constrain(lroundf(wSum / nW), -32767L, 32767L) : INT16_MIN;   // so -32768 stays "none"
+    hist[histHead] = {(int16_t)(nT ? lroundf(tSum / nT * 10) : INT16_MIN),
+                      (int16_t)(nT2 ? lroundf(t2Sum / nT2 * 10) : INT16_MIN),
+                      (int16_t)wAvg, (uint16_t)lroundf(fSum / n * 100), (uint8_t)(pctSum / n)};
     histHead = (histHead + 1) % HIST_N;
     if (histCount < HIST_N) histCount++;
-    tSum = 0; nT = pctSum = n = 0;
+    tSum = t2Sum = wSum = fSum = 0; nT = nT2 = nW = pctSum = n = 0;
 }
 
 // ---- Serial log ----
@@ -136,13 +180,17 @@ bool doubleReset() {                       // RST pressed again within the windo
     return m == DRD_MAGIC && ESP.getResetInfoPtr()->reason == REASON_EXT_SYS_RST;
 }
 
-// ---- Saved curve and broker (EEPROM = one flash sector, written only on Save) ----
+// ---- Saved curve, broker and loop settings (EEPROM = one flash sector, written only on Save) ----
 const uint32_t CURVE_MAGIC = 0xC0FE0001;   // bump when Curve changes layout
 struct Saved { uint32_t magic; Curve c; };
 const uint32_t MQTT_MAGIC = 0x4D515401;    // bump when MqttCfg changes layout
 struct SavedMqtt { uint32_t magic; MqttCfg m; };
 const int MQTT_AT = 64;                    // EEPROM offset of SavedMqtt: fixed, so a Curve change can't move it
 static_assert(sizeof(Saved) <= MQTT_AT, "curve record overlaps the broker record");
+const uint32_t LOOP_MAGIC = 0x100B0003;    // bump when LoopCfg changes layout
+struct SavedLoop { uint32_t magic; LoopCfg c; };
+const int LOOP_AT = 256;                   // EEPROM offset of SavedLoop, after the broker record (64 + 168)
+static_assert(MQTT_AT + sizeof(SavedMqtt) <= LOOP_AT, "broker record overlaps the loop record");
 
 // tLow < tHigh also keeps map() from dividing by zero; pctMax > 0 keeps a 0 → 0 % curve from
 // cutting the fans' 12 V at every temperature
@@ -196,41 +244,114 @@ void printMqtt() {
     else Serial.println("MQTT: off");
 }
 
-// ---- Boot counter, for watching stability ----
-// Each boot appends a record to a log in two flash sectors of its own: the last two of the filesystem
-// area, which this sketch doesn't use and an OTA update doesn't touch. A record goes into erased flash,
-// so it needs no erase; a sector is erased only when the other one is full, once per LOG_N boots. The
-// newest record is the valid one with the most boots in either sector, so a power cut during a write
-// or an erase loses that one boot at most. The curve/broker sector stays Save-only. Every record carries
-// the last crash forward, so it outlives later boots and power cuts.
+bool validLoop(const LoopCfg &c) {
+    return 100 <= c.heatCap && c.heatCap <= 20000 && 10 <= c.ppl && c.ppl <= 65535 && -5000 <= c.outMk && c.outMk <= 5000;
+}
+
+void loadLoop() {
+    SavedLoop s;
+    EEPROM.get(LOOP_AT, s);
+    if (s.magic == LOOP_MAGIC && validLoop(s.c)) loopCfg = s.c;   // else DEFAULT_LOOP: no inlet assigned yet
+}
+
+void saveLoop() {
+    EEPROM.put(LOOP_AT, SavedLoop{LOOP_MAGIC, loopCfg});   // put() compares first: an unchanged Save writes nothing
+    EEPROM.commit();
+}
+
+void addrStr(char *b, const uint8_t *a) {  // 16 hex digits, or "none"; b holds 17. The caller's buffer: two go in one printf
+    if (!sensors.validFamily(a)) { strcpy(b, "none"); return; }
+    for (int i = 0; i < 8; i++) sprintf(b + 2 * i, "%02x", a[i]);
+}
+
+void printLoop() {
+    char in[17], out[17];
+    addrStr(in, loopCfg.inlet);
+    addrStr(out, loopCfg.outlet);
+    stamp();
+    Serial.printf("Loop: %d J/(L·K), %d pulses/L, outlet %+.2f °C; inlet %s, outlet %s\n", loopCfg.heatCap, loopCfg.ppl, loopCfg.outMk / 1000.0f, in, out);
+}
+
+// Which sensor is which, by ROM address: the saved one is the inlet, the first other sensor found is the
+// outlet. With nothing saved, the first sensor found becomes the inlet and is saved, so a board upgraded
+// with one sensor keeps regulating on it. A saved inlet that is missing stays the inlet (the fans run
+// at PCT_FAILSAFE, as for a missing sensor); Swap on the page exchanges the roles. begin() re-counts
+// the bus, up to 150 ms with no sensor on it. True if a role changed.
+bool findSensors() {                       // true if a role changed
+    LoopCfg c0 = loopCfg;
+    sensors.begin();
+    DeviceAddress found[3];                // the two roles' sensors plus one unknown are all a scan needs
+    int n = 0;
+    for (uint8_t i = 0; i < sensors.getDeviceCount() && n < 3; i++)
+        if (sensors.getAddress(found[n], i) && sensors.validFamily(found[n])) n++;
+    auto onBus = [&](const uint8_t *a) { for (int k = 0; k < n; k++) if (!memcmp(found[k], a, 8)) return true; return false; };
+    uint8_t *role[2] = {loopCfg.inlet, loopCfg.outlet};
+    for (uint8_t *r : role) {              // a role whose sensor is blank or absent takes a sensor neither role names
+        if (sensors.validFamily(r) && onBus(r)) continue;
+        for (int k = 0; k < n; k++)
+            if (memcmp(found[k], loopCfg.inlet, 8) && memcmp(found[k], loopCfg.outlet, 8)) { memcpy(r, found[k], 8); break; }
+    }
+    bool changed = memcmp(c0.inlet, loopCfg.inlet, 8) || memcmp(c0.outlet, loopCfg.outlet, 8);
+    if (changed) saveLoop();
+    return changed;
+}
+
+float readTemp(const uint8_t *a) {         // °C, or DEVICE_DISCONNECTED_C
+    if (!sensors.validFamily(a)) return DEVICE_DISCONNECTED_C;
+    float t = sensors.getTempC(a);         // by address: no bus search
+    if (t == DEVICE_DISCONNECTED_C) t = sensors.getTempC(a);   // web traffic can evict OneWire from the flash cache; the 2nd try runs cached
+    return t;
+}
+
+// ---- Flash logs: the boot counter and the energy total ----
+// Each is an append-only log in two flash sectors of its own at the end of the filesystem area, which
+// this sketch doesn't use and an OTA update doesn't touch: boots in the last two, energy in the two
+// below them. A record goes into erased flash, so it needs no erase; a sector is erased only when the
+// other one is full. The newest record is the valid one with the greatest sequence word in either
+// sector, so a power cut during a write or an erase loses that one record at most. The curve/broker/
+// loop sector stays Save-only. Every boot record carries the last crash forward, so it outlives later
+// boots and power cuts.
 const uint32_t BOOTS_MAGIC = 0xB0070003;   // bump when BootRec changes layout
-const int LOG_N = SPI_FLASH_SEC_SIZE / sizeof(BootRec);   // records per sector (170)
+const uint32_t ENERGY_MAGIC = 0xE4E20001;  // bump when EnergyRec changes layout
 const int CRASH_RTC = 32;                  // RTC block of CrashRtc: an OTA update overwrites blocks 0-31
 const uint32_t CRASH_MAGIC = 0xC7A5B007;   // RTC holds random bits after power-on
+const int ENERGY_RTC = 36;                 // RTC blocks 36-39: EnergyRtc, right after CrashRtc
+const uint32_t ENERGY_RTC_MAGIC = 0xE4E27C01;   // bump when EnergyRtc changes layout
+const uint32_t ENERGY_LOG_MS = 3600000;    // how often a changed total goes to flash
+static_assert(ENERGY_RTC * 4 + sizeof(EnergyRtc) <= 512, "past the 128 RTC user blocks");
+static_assert(sizeof(BootRec) % 4 == 0 && sizeof(BootRec) <= LOG_REC_MAX
+           && sizeof(EnergyRec) % 4 == 0 && sizeof(EnergyRec) <= LOG_REC_MAX, "log records are whole words, up to LOG_REC_MAX");
 // By REASON_*, then ours. The index is kept in flash as crashWhy, so only ever append.
 // Shorter than ESP.getResetReason()'s "Software/System restart", "External System" etc.
 const char *const RESET_NAME[] = {"power on", "hardware watchdog", "exception", "software watchdog",
                                   "restart", "deep-sleep wake", "reset pin", "panic", "unknown"};
 const uint32_t RESET_PANIC = 7, RESET_UNKNOWN = 8;
 
-uint32_t logAddr(int sec, int i) {         // flash address of record i in log sector sec (0 or 1)
-    return FS_PHYS_ADDR + FS_PHYS_SIZE - (2 - sec) * SPI_FLASH_SEC_SIZE + i * sizeof(BootRec);
+bool bootOk(const void *r) { const BootRec &b = *(const BootRec *)r; return b.crashes <= b.boots; }
+// BootRec's words are boots, crashes, crashAt, crashUp, crashWhy, check, in that order, so the generic
+// check below reproduces the one older firmware wrote and existing logs stay valid.
+const FlashLog BOOT_LOG = {2, sizeof(BootRec), BOOTS_MAGIC, bootOk};
+const FlashLog ENERGY_LOG = {4, sizeof(EnergyRec), ENERGY_MAGIC, nullptr};
+
+bool logOn(const FlashLog &l) { return FS_PHYS_SIZE >= (uint32_t)l.fromEnd * SPI_FLASH_SEC_SIZE; }   // false: a flash layout without a filesystem area
+int logSlots(const FlashLog &l) { return SPI_FLASH_SEC_SIZE / l.size; }   // records per sector: 170 boots, 204 energy
+
+uint32_t logAddr(const FlashLog &l, int sec, int i) {   // flash address of record i in log sector sec (0 or 1)
+    return FS_PHYS_ADDR + FS_PHYS_SIZE - (l.fromEnd - sec) * SPI_FLASH_SEC_SIZE + i * l.size;
 }
 
-BootRec readRec(int sec, int i) {
-    BootRec b;
-    ESP.flashRead(logAddr(sec, i), (uint32_t *)&b, sizeof b);
-    return b;
+void logRead(const FlashLog &l, int sec, int i, void *rec) {
+    ESP.flashRead(logAddr(l, sec, i), (uint32_t *)rec, l.size);
 }
 
 // A torn write leaves some bits unprogrammed, in no set order. A plain XOR check would pass if the same
 // bit were missing from a field and check, so each word goes through murmur3's finalizer: one changed
-// bit flips about half.
-uint32_t recCheck(const BootRec &b) {
-    const uint32_t w[] = {b.boots, b.crashes, b.crashAt, b.crashUp, b.crashWhy};
-    uint32_t h = BOOTS_MAGIC;
-    for (uint32_t x : w) {
-        h = (h ^ x) * 0x9E3779B1;
+// bit flips about half. Over every word but the last, seeded with the log's magic.
+uint32_t logHash(const FlashLog &l, const void *rec) {
+    const uint32_t *w = (const uint32_t *)rec;
+    uint32_t h = l.magic;
+    for (int i = 0; i < l.size / 4 - 1; i++) {
+        h = (h ^ w[i]) * 0x9E3779B1;
         h ^= h >> 16; h *= 0x85EBCA6B;
         h ^= h >> 13; h *= 0xC2B2AE35;
         h ^= h >> 16;
@@ -238,10 +359,47 @@ uint32_t recCheck(const BootRec &b) {
     return h;
 }
 
-bool recErased(const BootRec &b) {
-    return (b.boots & b.crashes & b.crashAt & b.crashUp & b.crashWhy & b.check) == 0xFFFFFFFF;
+bool logErased(const FlashLog &l, const void *rec) {   // every word, check included, still 0xFFFFFFFF
+    const uint32_t *w = (const uint32_t *)rec;
+    uint32_t all = 0xFFFFFFFF;
+    for (int i = 0; i < l.size / 4; i++) all &= w[i];
+    return all == 0xFFFFFFFF;
 }
-bool recValid(const BootRec &b) { return !recErased(b) && b.check == recCheck(b) && b.crashes <= b.boots; }
+
+bool logValid(const FlashLog &l, const void *rec) {
+    const uint32_t *w = (const uint32_t *)rec;
+    return !logErased(l, rec) && w[l.size / 4 - 1] == logHash(l, rec) && (!l.ok || l.ok(rec));
+}
+
+// The newest valid record into rec and its slot into sec/at; false (rec untouched, sec 0, at -1) if there is none
+bool logNewest(const FlashLog &l, void *rec, int &sec, int &at) {
+    uint32_t b[LOG_REC_MAX / 4], best = 0;
+    bool any = false;
+    sec = 0; at = -1;
+    for (int s = 0; s < 2; s++)
+        for (int i = 0; i < logSlots(l); i++) {
+            logRead(l, s, i, b);
+            if (logValid(l, b) && (!any || b[0] > best)) { memcpy(rec, b, l.size); best = b[0]; sec = s; at = i; any = true; }
+        }
+    return any;
+}
+
+// Seals rec's check word and programs it into the first erased slot after (sec, at) (a torn write leaves
+// one that isn't), moving to the other sector, erased first, when this one is full. sec/at become the
+// slot written. False if the flash write failed.
+bool logAppend(const FlashLog &l, void *rec, int &sec, int &at) {
+    uint32_t *w = (uint32_t *)rec, b[LOG_REC_MAX / 4];
+    w[l.size / 4 - 1] = logHash(l, rec);
+    int next = at + 1;
+    while (next < logSlots(l) && (logRead(l, sec, next, b), !logErased(l, b))) next++;
+    if (next == logSlots(l)) {             // full: move to the other sector
+        sec ^= 1;
+        next = 0;
+        ESP.flashEraseSector(logAddr(l, sec, 0) / SPI_FLASH_SEC_SIZE);
+    }
+    at = next;
+    return ESP.flashWrite(logAddr(l, sec, next), w, l.size);
+}
 
 // The core calls this on an exception, soft watchdog or panic, just before it restarts; the hardware
 // watchdog resets without it. It is the only sign of a panic (abort, failed assert, out of memory),
@@ -253,9 +411,65 @@ extern "C" void custom_crash_callback(struct rst_info *ri, uint32_t, uint32_t) {
     RTC_USER_MEM[CRASH_RTC + offsetof(CrashRtc, magic) / 4] = CRASH_MAGIC;
 }
 
-void rtcBeat() {                           // every cycle: the time and uptime a crash would have
+int64_t mjOf(uint32_t lo, uint32_t hi) { return (int64_t)(((uint64_t)hi << 32) | lo); }
+int32_t whOf(int64_t mj) { return (int32_t)(mj / 3600000); }   // 1 Wh = 3.6e6 mJ; the only form ever printed, so no %lld
+
+void rtcEnergy() {                         // the RTC copy: survives a reset, a crash and an OTA update, not a power cut
+    EnergyRtc e = {ENERGY_RTC_MAGIC, energySince, (uint32_t)energyMj, (uint32_t)((uint64_t)energyMj >> 32)};
+    ESP.rtcUserMemoryWrite(ENERGY_RTC, (uint32_t *)&e, sizeof e);
+}
+
+void rtcBeat() {                           // every cycle: the time and uptime a crash would have, and the energy total
     CrashRtc c = {0, CRASH_MAGIC, timeSynced ? (uint32_t)time(nullptr) : 0, (uint32_t)(micros64() / 1000000)};
     ESP.rtcUserMemoryWrite(CRASH_RTC, (uint32_t *)&c, sizeof c);
+    rtcEnergy();
+}
+
+// In setup(), after countBoot(): the RTC copy if its magic holds (it is the newer, written every cycle),
+// else the newest flash record, which also says where the next one goes.
+void loadEnergy() {
+    EnergyRec r = {};
+    energyLogOn = logOn(ENERGY_LOG);
+    if (energyLogOn) logNewest(ENERGY_LOG, &r, energySec, energyAt);
+    energySeq = r.seq;
+    energyMj = mjOf(r.mjLo, r.mjHi);
+    energySince = r.since;
+    energyLoggedWh = whOf(energyMj);
+    EnergyRtc e;
+    ESP.rtcUserMemoryRead(ENERGY_RTC, (uint32_t *)&e, sizeof e);
+    bool rtc = e.magic == ENERGY_RTC_MAGIC;
+    if (rtc) { energyMj = mjOf(e.mjLo, e.mjHi); energySince = e.since; }
+    stamp();
+    Serial.printf("Energy: %d Wh, from %s\n", (int)whOf(energyMj),
+        rtc ? "RTC" : energyAt >= 0 ? "flash" : energyLogOn ? "nothing" : "nothing (no filesystem area: lost at power-off)");
+}
+
+// Every cycle: the total goes to flash once an hour if its Wh changed; force = now (Reset). From boot
+// the first write waits an hour, so a restart loop can't wear the log. Changing all the time, a sector
+// is erased once per 204 writes, about every 17 days.
+void logEnergy(bool force) {
+    static uint32_t lastMs;
+    if (!energyLogOn) return;
+    int32_t wh = whOf(energyMj);
+    if (!force && (wh == energyLoggedWh || millis() - lastMs < ENERGY_LOG_MS)) return;
+    lastMs = millis();
+    EnergyRec r = {energySeq + 1, energySince, (uint32_t)energyMj, (uint32_t)((uint64_t)energyMj >> 32), 0};
+    if (!logAppend(ENERGY_LOG, &r, energySec, energyAt)) {
+        stamp();
+        Serial.println("Energy log: flash write failed");
+        return;
+    }
+    energySeq = r.seq;
+    energyLoggedWh = wh;
+}
+
+void resetEnergy() {                       // the page's Reset button
+    energyMj = 0;
+    energySince = timeSynced ? (uint32_t)time(nullptr) : 0;
+    rtcEnergy();
+    logEnergy(true);
+    stamp();
+    Serial.println("Energy: reset");
 }
 
 // Sets resetReason and why (its RESET_NAME index) and gets the previous run's RTC record (prev.magic !=
@@ -279,15 +493,10 @@ void countBoot() {                         // early in setup(), so every log lin
     uint32_t why;
     CrashRtc prev;
     bool crash = whyBoot(why, prev);
-    bool logged = FS_PHYS_SIZE >= 2 * SPI_FLASH_SEC_SIZE;   // false: a flash layout without a filesystem area
+    bool logged = logOn(BOOT_LOG);
     BootRec last = {};                     // newest record so far; none: start in sector 0
     int sec = 0, at = -1;
-    if (logged)
-        for (int s = 0; s < 2; s++)
-            for (int i = 0; i < LOG_N; i++) {
-                BootRec b = readRec(s, i);
-                if (recValid(b) && b.boots > last.boots) { last = b; sec = s; at = i; }
-            }
+    if (logged) logNewest(BOOT_LOG, &last, sec, at);
     boots = last;                          // the last crash carries forward
     boots.boots++;
     if (crash) {
@@ -297,19 +506,9 @@ void countBoot() {                         // early in setup(), so every log lin
         boots.crashUp = known ? prev.up : 0;
         boots.crashWhy = why;
     }
-    boots.check = recCheck(boots);
-    if (logged) {
-        int next = at + 1;                 // first erased slot after it; a torn write leaves one that isn't
-        while (next < LOG_N && !recErased(readRec(sec, next))) next++;
-        if (next == LOG_N) {               // full: move to the other sector
-            sec ^= 1;
-            next = 0;
-            ESP.flashEraseSector(logAddr(sec, 0) / SPI_FLASH_SEC_SIZE);
-        }
-        if (!ESP.flashWrite(logAddr(sec, next), (uint32_t *)&boots, sizeof boots)) {
-            stamp();
-            Serial.println("Boot counter: flash write failed");
-        }
+    if (logged && !logAppend(BOOT_LOG, &boots, sec, at)) {
+        stamp();
+        Serial.println("Boot counter: flash write failed");
     }
     stamp();
     if (logged) Serial.printf("Boot %u, %u crashes; this one: %s", (unsigned)boots.boots, (unsigned)boots.crashes, resetReason);
@@ -345,22 +544,28 @@ void setFanPower(float t, int pct) {       // called once per 1 s cycle
     digitalWrite(POWER_PIN, fanPower ? HIGH : LOW);
 }
 
-const int STATUS_N = 288;                  // statusJson() buffer; with both parts its worst case is 267 bytes with the NUL
+const int STATUS_N = 384;                  // statusJson() buffer; with both parts its worst case is 355 bytes with the NUL
 const int JSON_LIVE = 1, JSON_BOOT = 2;    // statusJson() parts
-// A JSON object of the parts asked for: /status.json has both, MQTT one per topic. LIVE: the live numbers,
-// uptime (s) and clock (UTC s; null until SNTP has set it). BOOT: boots, when this one started (UTC s; null
-// until the first sync), why, and the last crash. boots + up order everything, as neither jumps. Each part
-// is written straight into buf ending in a comma, which the closing brace overwrites; past n, the JSON is
-// cut short.
+// A JSON object of the parts asked for: /status.json has both, MQTT one per topic. LIVE: the live numbers
+// (t = the inlet, which the curve follows; tin/tout; flow L/min; heat W, null when a sensor is missing;
+// wh and since, the energy total and its Reset time), uptime (s) and clock (UTC s; null until SNTP has
+// set it). BOOT: boots, when this one started (UTC s; null until the first sync), why, and the last crash.
+// boots + up order everything, as neither jumps. Each part is written straight into buf ending in a
+// comma, which the closing brace overwrites; past n, the JSON is cut short.
 void statusJson(char *buf, size_t n, int parts) {
     int len = snprintf(buf, n, "{");
     if (parts & JSON_LIVE) {
-        char t[12] = "null", now[12] = "null";
+        char t[12] = "null", t2[12] = "null", heat[12] = "null", since[12] = "null", now[12] = "null";
         if (lastTemp != DEVICE_DISCONNECTED_C) snprintf(t, sizeof t, "%.1f", lastTemp);   // else sensor missing
+        if (lastTout != DEVICE_DISCONNECTED_C) snprintf(t2, sizeof t2, "%.1f", lastTout);
+        if (lastHeat != INT32_MIN) snprintf(heat, sizeof heat, "%d", (int)lastHeat);
+        if (energySince) snprintf(since, sizeof since, "%u", (unsigned)energySince);
         if (timeSynced) snprintf(now, sizeof now, "%u", (unsigned)time(nullptr));
-        len += snprintf(buf + len, n - len, "\"t\":%s,\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u],\"up\":%u,\"time\":%s,",
-            t, lastPct, fanPower, (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2],
-            (unsigned)(micros64() / 1000000), now);
+        len += snprintf(buf + len, n - len,
+            "\"t\":%s,\"tin\":%s,\"tout\":%s,\"flow\":%.2f,\"heat\":%s,\"wh\":%d,\"since\":%s,"
+            "\"pct\":%d,\"pwr\":%d,\"rpm\":[%u,%u,%u],\"up\":%u,\"time\":%s,",
+            t, t, t2, lastFlow, heat, (int)whOf(energyMj), since, lastPct, fanPower,
+            (unsigned)lastRpm[0], (unsigned)lastRpm[1], (unsigned)lastRpm[2], (unsigned)(micros64() / 1000000), now);
     }
     if ((parts & JSON_BOOT) && len < (int)n) {
         char booted[12] = "null", at[12] = "null", crash[80] = "null";
@@ -509,55 +714,76 @@ void mqttProcess() {
     mqttRetryS = mqttConnect() ? 0 : constrain(mqttRetryS * 2, MQTT_RETRY_MIN_S, MQTT_RETRY_MAX_S);
 }
 
-// Main page = PAGE_HEAD + hostname (the title) + PAGE_TOP + snprintf'd curve form, broker form and
-// footer + PAGE_SCRIPT, streamed. '%' is literal in the PROGMEM parts; only the snprintf part needs '%%'.
+// Main page = PAGE_HEAD + hostname (the title) + PAGE_TOP + snprintf'd curve form, loop form, broker
+// form and footer + PAGE_SCRIPT, streamed. '%' is literal in the PROGMEM parts; only the snprintf
+// parts need '%%'.
 const char PAGE_HEAD[] PROGMEM = R"HTML(<!DOCTYPE html><meta charset=utf-8>
 <meta name=viewport content='width=device-width'><title>)HTML";
 
 const char PAGE_TOP[] PROGMEM = R"HTML(</title>
-<style>input{width:4em}.w{width:10em}canvas{display:block;width:100%;max-width:720px;height:220px}
+<style>input{width:4em}.w{width:10em}.m{width:5.5em}canvas{display:block;width:100%;max-width:720px;height:220px}
 .k{display:inline-block;width:1.2em;height:3px;vertical-align:middle}</style>
 <h2 id=st>…</h2><p id=fans>
-<p><span class=k style=background:#e4572e></span> Temperature °C &nbsp;
+<form method=post action=/energy><p>Energy <b id=en>…</b> <button onclick="return confirm('Reset the energy total?')">Reset</button></form>
+<p><span class=k style=background:#e4572e></span> Inlet °C &nbsp;
+<span class=k style=background:#f3b09a></span> Outlet °C &nbsp;
 <span class=k style=background:#2e86de></span> Duty % &nbsp;
 <small style=color:gray>last hour, 10 s averages; dashed = ramp start/end</small>
 <canvas id=cv></canvas>
+<p><span class=k style=background:#8e44ad></span> Heat W &nbsp;
+<span class=k style=background:#27ae60></span> Flow L/min
+<canvas id=cv2></canvas>
 )HTML";
 
+// Two charts share plot(): series with their own axis each, a left and a right axis, dashed lines on
+// the left one. The temperature axis keeps whole degrees; heat and flow take 1-2-5 steps that always
+// include 0, so the heat chart's dashed zero line means something.
 const char PAGE_SCRIPT[] PROGMEM = R"JS(<script>
 const dur=s=>(s>=86400?Math.floor(s/86400)+' d ':'')+new Date(s*1e3).toISOString().slice(11,16),
- when=s=>new Date(s*1e3).toLocaleString([],{dateStyle:'short',timeStyle:'short'});
+ when=s=>new Date(s*1e3).toLocaleString([],{dateStyle:'short',timeStyle:'short'}),
+ deg=t=>t==null?'missing':t.toFixed(1);
 function u(){fetch('/status.json').then(r=>r.json()).then(d=>{
- st.textContent=(d.t==null?'sensor missing':d.t.toFixed(1)+' °C')+' → '+d.pct+' %'+(d.pwr?'':' · fans off');
+ st.textContent=deg(d.tin)+' → '+deg(d.tout)+' °C · '+d.flow.toFixed(2)+' L/min · '+(d.heat==null?'—':d.heat)+' W → '+d.pct+' %'+(d.pwr?'':' · fans off');
+ en.textContent=(d.wh/1000).toFixed(3)+' kWh'+(d.since?' since '+when(d.since):'');
  fans.innerHTML=d.rpm.map((r,i)=>'Fan'+(i+1)+' '+r+' RPM').join('<br>');
  const c=d.crash;
  up.innerText='Up '+dur(d.up)+(d.booted?' since '+when(d.booted):'')+' · boots '+d.boots+' · last reset: '+d.reset
   +'\nCrashes '+d.crashes+(c?' · last '+(c.at?when(c.at):'time unknown')+', '+c.why+' after '+dur(c.up)+' up':'')})}
 let H;
 function g(){fetch('/history.json').then(r=>r.json()).then(h=>{H=h;draw()})}
-function draw(){
- if(!H)return;
+const nice=x=>{const p=10**Math.floor(Math.log10(x)),m=x/p;return(m<=1?1:m<=2?2:m<=5?5:10)*p};
+function ax(a){
+ const v=a.filter(x=>x!=null).concat([0]),lo=Math.min(...v),hi=Math.max(...v);
+ let s=nice((hi-lo)/4||1),b;
+ for(;;){b=Math.floor(lo/s)*s;if(b+4*s>=hi)break;s=nice(s*1.01)}
+ return[b,b+4*s]}
+function plot(cv,S,L,R,D){
  const r=devicePixelRatio||1,W=cv.clientWidth,Hh=cv.clientHeight;
  cv.width=W*r;cv.height=Hh*r;
  const c=cv.getContext('2d');c.scale(r,r);
- const L=30,R=34,T=8,B=18,w=W-L-R,h=Hh-T-B,N=360,n=H.t.length;
- const v=H.t.filter(x=>x!=null).concat([H.tl,H.th]);
- const lo=Math.floor(Math.min(...v))-1,hi=lo+4*Math.ceil((Math.ceil(Math.max(...v))+1-lo)/4);
- const X=i=>L+w*(N-n+i+1)/N,Yt=x=>T+h*(hi-x)/(hi-lo),Yd=x=>T+h*(100-x)/100;
+ const M=34,P=40,T=8,B=18,w=W-M-P,h=Hh-T-B,N=360,n=S[0][0].length;
+ const X=i=>M+w*(N-n+i+1)/N,Y=(A,x)=>T+h*(A[1]-x)/(A[1]-A[0]),lab=x=>+x.toPrecision(4);
  c.font='11px sans-serif';c.lineWidth=1;c.strokeStyle='#ddd';c.fillStyle='#666';
  for(let k=0;k<=4;k++){const y=T+h*k/4;
-  c.beginPath();c.moveTo(L,y);c.lineTo(L+w,y);c.stroke();
-  c.textAlign='right';c.fillText(hi-(hi-lo)*k/4,L-4,y+4);
-  c.textAlign='left';c.fillText(100-25*k,L+w+4,y+4)}
+  c.beginPath();c.moveTo(M,y);c.lineTo(M+w,y);c.stroke();
+  c.textAlign='right';c.fillText(lab(L[1]-(L[1]-L[0])*k/4),M-4,y+4);
+  c.textAlign='left';c.fillText(lab(R[1]-(R[1]-R[0])*k/4),M+w+4,y+4)}
  [60,45,30,15,0].forEach(m=>{c.textAlign=m==60?'left':m?'center':'right';
-  c.fillText(m?'-'+m+' min':'now',L+w*(1-m/60),Hh-4)});
+  c.fillText(m?'-'+m+' min':'now',M+w*(1-m/60),Hh-4)});
  c.setLineDash([4,4]);c.strokeStyle='#999';
- [H.tl,H.th].forEach(x=>{c.beginPath();c.moveTo(L,Yt(x));c.lineTo(L+w,Yt(x));c.stroke()});
+ D.forEach(x=>{c.beginPath();c.moveTo(M,Y(L,x));c.lineTo(M+w,Y(L,x));c.stroke()});
  c.setLineDash([]);c.lineWidth=2;
- [[H.d,Yd,'#2e86de'],[H.t,Yt,'#e4572e']].forEach(([a,Y,col])=>{
+ S.forEach(([a,A,col])=>{
   c.strokeStyle=col;c.beginPath();let p=0;
-  a.forEach((x,i)=>{if(x==null){p=0;return}p?c.lineTo(X(i),Y(x)):c.moveTo(X(i),Y(x));p=1});
+  a.forEach((x,i)=>{if(x==null){p=0;return}p?c.lineTo(X(i),Y(A,x)):c.moveTo(X(i),Y(A,x));p=1});
   c.stroke()})}
+function draw(){
+ if(!H)return;
+ const v=H.t.concat(H.t2).filter(x=>x!=null).concat([H.tl,H.th]);
+ const lo=Math.floor(Math.min(...v))-1,tA=[lo,lo+4*Math.ceil((Math.ceil(Math.max(...v))+1-lo)/4)],dA=[0,100];
+ plot(cv,[[H.d,dA,'#2e86de'],[H.t2,tA,'#f3b09a'],[H.t,tA,'#e4572e']],tA,dA,[H.tl,H.th]);
+ const wA=ax(H.w),fA=ax(H.f);
+ plot(cv2,[[H.f,fA,'#27ae60'],[H.w,wA,'#8e44ad']],wA,fA,[0])}
 u();g();setInterval(u,2000);setInterval(g,10000);addEventListener('resize',draw);
 </script>)JS";
 
@@ -572,7 +798,7 @@ void handleRoot() {                        // status and graph are filled in by 
     wm.server->sendContent_P(PAGE_HEAD);
     wm.server->sendContent(hostname);
     wm.server->sendContent_P(PAGE_TOP);
-    char buf[1024];                        // the curve form, the broker form, then the footer
+    char buf[1024];                        // the curve form, the loop form (≤ 450 B), the broker form (≤ 812 B), then the footer
     snprintf(buf, sizeof buf,
         "<form method=post action=/curve><p>"
         "Ramp <input name=tl type=number min=0 max=100 required value=%d> → "
@@ -581,6 +807,20 @@ void handleRoot() {                        // status and graph are filled in by 
         "<input name=ph type=number min=1 max=100 required value=%d> %%"
         "<p><button>Save</button> <button name=reset value=1 formnovalidate>Defaults</button></form>",
         curve.tLow, curve.tHigh, curve.pctMin, curve.pctMax);
+    wm.server->sendContent(buf);
+    char in[17], out[17];
+    addrStr(in, loopCfg.inlet);
+    addrStr(out, loopCfg.outlet);
+    snprintf(buf, sizeof buf,
+        "<details><summary>Loop · inlet %s%s · outlet %s%s</summary><form method=post action=/loop><p>"
+        "Water <input name=cap class=m type=number min=100 max=20000 required value=%d> J/(L·K) &nbsp; "
+        "Flow meter <input name=ppl class=m type=number min=10 max=65535 required value=%d> pulses/L &nbsp; "
+        "Outlet offset <input name=off class=m type=number step=0.01 min=-5 max=5 required value=%.2f> °C"
+        "<p><button>Save</button> <button name=swap value=1 formnovalidate>Swap inlet/outlet</button> "
+        "<button name=match value=1 formnovalidate title='With both sensors at one temperature for 30 s: sets the offset that makes the outlet read as the inlet'>Match outlet to inlet</button></form></details>",
+        in, cycled && sensors.validFamily(loopCfg.inlet) && lastTemp == DEVICE_DISCONNECTED_C ? " (missing)" : "",
+        out, cycled && sensors.validFamily(loopCfg.outlet) && lastTout == DEVICE_DISCONNECTED_C ? " (missing)" : "",
+        loopCfg.heatCap, loopCfg.ppl, loopCfg.outMk / 1000.0f);
     wm.server->sendContent(buf);
     char state[32] = "off";
     if (mqttCfg.host[0] && mqtt.connected()) strcpy(state, "connected");
@@ -605,25 +845,28 @@ void handleRoot() {                        // status and graph are filled in by 
     wm.server->sendContent_P(PAGE_SCRIPT);
 }
 
-void handleHistory() {                     // ~3.3 KB when full, so streamed in small pieces
+void handleHistory() {                     // ~9 KB when full, so streamed in small pieces
     auto &s = *wm.server;
     char buf[256];
     snprintf(buf, sizeof buf, "{\"step\":%d,\"tl\":%d,\"th\":%d,\"t\":[", HIST_STEP, curve.tLow, curve.tHigh);
     s.setContentLength(CONTENT_LENGTH_UNKNOWN);
     s.send(200, "application/json", "");
     s.sendContent(buf);
-    for (int pass = 0; pass < 2; pass++) {   // 0: temperatures, 1: duties; oldest first
+    static const char *const NEXT[] = {"],\"t2\":[", "],\"w\":[", "],\"f\":[", "],\"d\":[", "]}"};
+    for (int pass = 0; pass < 5; pass++) {   // inlet, outlet, heat, flow, duty; oldest first
         int len = 0;
         for (int k = 0; k < histCount; k++) {
             const Sample &x = hist[(histHead - histCount + k + HIST_N) % HIST_N];
-            const char *sep = k ? "," : "";
-            if (pass)                    len += snprintf(buf + len, sizeof buf - len, "%s%u", sep, x.pct);
-            else if (x.t10 == INT16_MIN) len += snprintf(buf + len, sizeof buf - len, "%snull", sep);
-            else                         len += snprintf(buf + len, sizeof buf - len, "%s%.1f", sep, x.t10 / 10.0f);
+            char v[12] = "null";
+            if (pass == 4) snprintf(v, sizeof v, "%u", x.pct);
+            else if (pass == 3) snprintf(v, sizeof v, "%.2f", x.f100 / 100.0f);
+            else if (pass == 2) { if (x.w != INT16_MIN) snprintf(v, sizeof v, "%d", x.w); }
+            else { int16_t t10 = pass ? x.t2_10 : x.t10; if (t10 != INT16_MIN) snprintf(v, sizeof v, "%.1f", t10 / 10.0f); }
+            len += snprintf(buf + len, sizeof buf - len, "%s%s", k ? "," : "", v);
             if (len > (int)sizeof buf - 16) { s.sendContent(buf, len); len = 0; }
         }
         if (len) s.sendContent(buf, len);
-        s.sendContent(pass ? "]}" : "],\"d\":[");
+        s.sendContent(NEXT[pass]);
     }
 }
 
@@ -645,6 +888,49 @@ void handleCurve() {                       // form POST: validate, apply, save, 
         }
     }
     applyCurve(c);
+    wm.server->sendHeader("Location", "/");
+    wm.server->send(303);
+}
+
+void handleLoop() {                        // loop form POST: Save the numbers, Swap the sensors' roles, or Match the outlet to the inlet
+    auto &s = *wm.server;
+    bool swap = s.hasArg("swap"), match = s.hasArg("match");
+    if (swap && !sensors.validFamily(loopCfg.outlet)) findSensors();   // maybe plugged in since the last scan; it may fill either role, so copy after it
+    LoopCfg c = loopCfg;
+    if (swap) {
+        if (!sensors.validFamily(c.outlet)) {
+            s.send(400, "text/html; charset=utf-8", "<meta charset=utf-8>Only one sensor found; nothing to swap with. <a href=/>Back</a>");
+            return;
+        }
+        DeviceAddress was;
+        memcpy(was, c.inlet, 8);
+        memcpy(c.inlet, c.outlet, 8);
+        memcpy(c.outlet, was, 8);          // may be a missing sensor: then that role reads nothing until it is back
+    } else if (match) {                    // the sensors are coupled: save the offset that makes them agree
+        if (dtN < 30) {
+            s.send(400, "text/html; charset=utf-8", "<meta charset=utf-8>Both sensors must read for 30 s first. <a href=/>Back</a>");
+            return;
+        }
+        c.outMk = constrain(lroundf(dtEma * 1000), -5000L, 5000L);
+    } else {
+        c.heatCap = s.arg("cap").toInt();
+        c.ppl = s.arg("ppl").toInt();
+        c.outMk = lroundf(s.arg("off").toFloat() * 1000);
+        if (!validLoop(c)) {
+            s.send(400, "text/html; charset=utf-8",
+                "<meta charset=utf-8>Need 100 ≤ heat capacity ≤ 20000 J/(L·K), 10 ≤ pulses per litre ≤ 65535 and an offset within ±5 °C. <a href=/>Back</a>");
+            return;
+        }
+    }
+    loopCfg = c;
+    saveLoop();
+    printLoop();
+    s.sendHeader("Location", "/");
+    s.send(303);
+}
+
+void handleEnergy() {                      // the Reset button
+    resetEnergy();
     wm.server->sendHeader("Location", "/");
     wm.server->send(303);
 }
@@ -711,6 +997,8 @@ void addRoutes() {                         // runs before WiFiManager adds its r
     wm.server->on("/status.json", handleStatus);   // not /status: WiFiManager has one
     wm.server->on("/history.json", handleHistory);
     wm.server->on("/curve", HTTP_POST, handleCurve);
+    wm.server->on("/loop", HTTP_POST, handleLoop);
+    wm.server->on("/energy", HTTP_POST, handleEnergy);
     wm.server->on("/mqtt", HTTP_POST, handleMqtt);
 }
 
@@ -757,23 +1045,28 @@ void setup() {
         pinMode(TACH_PIN[i], INPUT);           // use INPUT_PULLUP if no external resistor
         attachInterrupt(digitalPinToInterrupt(TACH_PIN[i]), isr[i], FALLING);
     }
+    pinMode(FLOW_PIN, INPUT_PULLUP);         // the NPN stage's 10 kΩ pull-up holds it high between pulses; the internal one keeps an unconnected pin quiet
+    attachInterrupt(digitalPinToInterrupt(FLOW_PIN), tFlow, FALLING);
 
     settimeofday_cb(onTimeSync);             // SNTP itself starts in startLan()
     setTZ(TIMEZONE);                         // the log's local time, from the boot line's crash time on
     countBoot();                             // first, so every log line has the boot number
-    EEPROM.begin(MQTT_AT + sizeof(SavedMqtt));   // curve at 0, broker at MQTT_AT
+    loadEnergy();
+    EEPROM.begin(LOOP_AT + sizeof(SavedLoop));   // curve at 0, broker at MQTT_AT, loop at LOOP_AT
     loadCurve();
     printCurve();
     loadMqtt();
     printMqtt();
+    loadLoop();                              // before findSensors(), which may fill in and save the inlet
     net.setTimeout(2000);                    // ms for DNS and TCP connect (5 s each by default) and...
     mqtt.setSocketTimeout(2);                // ...s for the broker's reply (15): a dead broker stalls the loop ~6 s per try
     mqtt.setBufferSize(STATUS_N + 64);       // header + topic + even both statusJson() parts; publish() quietly fails past it
     mqtt.setCallback(onMqtt);
 
-    sensors.begin();
+    findSensors();                           // sensors.begin() is in there
     sensors.setWaitForConversion(false);     // non-blocking conversions
     sensors.requestTemperatures();
+    printLoop();
 
     snprintf(hostname, sizeof hostname, "fan-controller-%06x", ESP.getChipId());   // unique per board, so several can share a network
     bool forcePortal = doubleReset();
@@ -795,6 +1088,7 @@ void setup() {
         wm.autoConnect(hostname, AP_PASS);     // can't connect → starts the setup AP
     }
     startMdns();                             // either way an interface is up now; the name works on the AP too
+    noInterrupts(); flowPulses = pulses[0] = pulses[1] = pulses[2] = 0; interrupts();   // edges counted while connecting would inflate the first cycle's rates
 }
 
 void loop() {
@@ -809,23 +1103,35 @@ void loop() {
     if (now - last < 1000) return;
     uint32_t dt = now - last;
     last = now;
-    rtcBeat();
 
-    float t = sensors.getTempCByIndex(0);
-    if (t == DEVICE_DISCONNECTED_C) t = sensors.getTempCByIndex(0);   // web traffic can evict OneWire from the flash cache; 2nd try runs cached
-    sensors.requestTemperatures();           // start next conversion
+    static int scanIn;                       // while a sensor isn't reading, look at the bus once a minute: a newly plugged or replaced one takes the vacant role
+    if ((lastTemp == DEVICE_DISCONNECTED_C || lastTout == DEVICE_DISCONNECTED_C) && ++scanIn >= 60) { scanIn = 0; if (findSensors()) printLoop(); }
+    float tIn = readTemp(loopCfg.inlet), tRaw = readTemp(loopCfg.outlet);
+    float tOut = tRaw == DEVICE_DISCONNECTED_C ? tRaw : tRaw + loopCfg.outMk / 1000.0f;   // the saved offset corrects the outlet for everything downstream
+    sensors.requestTemperatures();           // one broadcast starts both sensors' next conversion
+    noInterrupts(); uint32_t fp = flowPulses; flowPulses = 0; interrupts();
+    float flow = min(fp * 60000.0f / (dt * (float)loopCfg.ppl), 655.35f);   // L/min; the cap sizes the JSON field and the history's uint16
+    bool haveHeat = tIn != DEVICE_DISCONNECTED_C && tOut != DEVICE_DISCONNECTED_C;
+    if (haveHeat) { float d = tIn - tRaw; dtEma = dtN ? dtEma + (d - dtEma) / 16 : d; if (dtN < 1000) dtN++; } else dtN = 0;   // for Match: the raw difference, smoothed
+    float heatW = haveHeat ? loopCfg.heatCap * flow / 60 * (tIn - tOut) : 0;   // J/(L·K) × L/s × K
+    if (haveHeat) energyMj += llroundf(heatW * dt);   // W × ms = mJ; llroundf, as the product can pass 2^31 after a long stall
 
-    int pct = PCT_FAILSAFE;                  // sensor missing → full speed
-    if (t != DEVICE_DISCONNECTED_C) {
-        pct = curvePct(t);
-    }
-    lastTemp = t;
+    int pct = tIn != DEVICE_DISCONNECTED_C ? curvePct(tIn) : PCT_FAILSAFE;   // inlet missing → full speed
+    lastTemp = tIn;
+    cycled = true;
+    lastTout = tOut;
+    lastFlow = flow;
+    lastHeat = haveHeat ? lroundf(heatW) : INT32_MIN;
     lastPct = pct;
-    histAdd(t, pct);
-    setFanPower(t, pct);
+    histAdd(tIn, tOut, haveHeat, heatW, flow, pct);
+    setFanPower(tIn, pct);
+    rtcBeat();                               // after the energy add, so the RTC copy has this cycle
+    logEnergy(false);
 
     stamp();
-    Serial.printf("Temp %.1f °C -> %d %%%s |", t, pct, fanPower ? "" : " (12 V off)");
+    Serial.printf("In %.1f Out %.1f °C %.2f L/min ", tIn, tOut, flow);
+    if (haveHeat) Serial.printf("%d W", (int)lastHeat); else Serial.print("-- W");
+    Serial.printf(" -> %d %%%s |", pct, fanPower ? "" : " (12 V off)");
     setFan(fanPower ? pct : 100);              // 12 V cut: 100 % = GPIO low, so the PWM transistor idles too
     for (int i = 0; i < 3; i++) {
         noInterrupts(); uint32_t p = pulses[i]; pulses[i] = 0; interrupts();
