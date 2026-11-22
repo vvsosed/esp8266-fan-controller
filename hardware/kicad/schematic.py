@@ -69,11 +69,14 @@ def pin_offsets(symbol):
 
 
 def _properties(symbol):
-    """property name -> (value, (x, y, angle), hidden) from a library symbol."""
+    """property name -> (value, (x, y, angle), hidden, justify) from a library symbol."""
     out = {}
     for p in find_all(symbol, "property"):
         at = find(p, "at")
-        out[p[1]] = (p[2], (float(at[1]), float(at[2]), int(float(at[3]))), find(p, "hide") is not None)
+        eff = find(p, "effects")
+        just = find(eff, "justify") if eff else None
+        out[p[1]] = (p[2], (float(at[1]), float(at[2]), int(float(at[3]))), find(p, "hide") is not None,
+                     " ".join(just[1:]) if just else None)
     return out
 
 
@@ -115,8 +118,19 @@ def _font(size=1.27):
     return [Sym("effects"), [Sym("font"), [Sym("size"), Sym(_fmt(size)), Sym(_fmt(size))]]]
 
 
-def _prop(name, value, at, hide=False, justify=None):
-    node = [Sym("property"), name, value, _at(*at)]
+def _justify(place, justify):
+    """The stored justification that draws horizontal text with the given on-screen one.
+
+    KiCad applies the symbol's transform to its fields' justification too: for horizontal text it
+    swaps left and right when the symbol is rotated 90 or 180, and again when it is mirrored about y.
+    """
+    if justify in ("left", "right") and (place.rot in (90, 180)) != (place.mirror == "y"):
+        return "right" if justify == "left" else "left"
+    return justify
+
+
+def _prop(name, value, at, hide=False, justify=None, angle=0):
+    node = [Sym("property"), name, value, _at(at[0], at[1], angle)]
     if hide:
         node.append([Sym("hide"), Sym("yes")])
     eff = _font()
@@ -151,27 +165,33 @@ class Schematic:
             node.append([Sym("mirror"), Sym(place.mirror)])
         node += [[Sym("unit"), Sym("1")], [Sym("exclude_from_sim"), Sym("no")], [Sym("in_bom"), Sym("yes" if in_bom else "no")],
                  [Sym("on_board"), Sym("yes")], [Sym("dnp"), Sym("no")], [Sym("uuid"), ids.sym(ref)]]
-        values = {"Reference": ref, "Value": value, "Footprint": footprint, "Datasheet": libprops.get("Datasheet", ("", None, True))[0],
-                  "Description": libprops.get("Description", ("", None, True))[0]}
+        values = {"Reference": ref, "Value": value, "Footprint": footprint, "Datasheet": libprops.get("Datasheet", ("", None, True, None))[0],
+                  "Description": libprops.get("Description", ("", None, True, None))[0]}
+        angle = 90 if place.rot in (90, 270) else 0      # stored in symbol coordinates: this keeps the text horizontal
         for name in ("Reference", "Value", "Footprint", "Datasheet", "Description"):
             lp = libprops.get(name)
             at = pin_xy(place, lp[1]) if lp else place.at
             hide = (lp[2] if lp else True) or (name == "Reference" and hidden_ref)
+            justify = lp[3] if lp else None
+            a = angle
             if props and name in props:
-                at = props[name]
-            node.append(_prop(name, values[name], at, hide))
+                at, justify, a = props[name]
+                a = angle if a is None else a
+                justify = _justify(place, justify)
+            node.append(_prop(name, values[name], at, hide, justify, a))
         for number in sorted(pin_offsets(symbol), key=lambda n: (len(n), n)):
             node.append([Sym("pin"), number, [Sym("uuid"), ids.other("pin:" + ref, int(number) if number.isdigit() else 0)]])
         node.append([Sym("instances"), [Sym("project"), "fan_controller", [Sym("path"), "/" + str(ids.ROOT), [Sym("reference"), ref], [Sym("unit"), Sym("1")]]]])
         self.items.append(node)
 
-    def add_part(self, part, place, value_at=None, ref_at=None):
+    def add_part(self, part, place, value_at=None, ref_at=None, justify=None, angle=None):
+        """value_at/ref_at override the library's field spots; justify ("left", "right" or None) and angle apply to both."""
         self.places[part.ref] = (place, part.lib_id)
         props = {}
         if value_at:
-            props["Value"] = value_at
+            props["Value"] = (value_at, justify, angle)
         if ref_at:
-            props["Reference"] = ref_at
+            props["Reference"] = (ref_at, justify, angle)
         self._instance(part.lib_id, part.ref, part.value, part.footprint, place, True, props=props)
 
     def add_power(self, net, at, rot=0):
@@ -179,14 +199,14 @@ class Schematic:
         ref = f"#PWR{self._n('pwr'):03d}"
         self._instance(lib_id, ref, net, "", Place(ref, at, rot), False, hidden_ref=True)
 
-    def add_flag(self, at):
+    def add_flag(self, at, rot=0):
         ref = f"#FLG{self._n('flg'):03d}"
-        self._instance("power:PWR_FLAG", ref, "PWR_FLAG", "", Place(ref, at, 0), False, hidden_ref=True)
+        self._instance("power:PWR_FLAG", ref, "PWR_FLAG", "", Place(ref, at, rot), False, hidden_ref=True)
 
     def add_label(self, net, at, rot=0, shape="bidirectional"):
         """A global label: its net is named plainly (a local label's would be "/NET" on the board too)."""
         eff = _font()
-        eff.append([Sym("justify"), Sym("right" if rot == 180 else "left")])
+        eff.append([Sym("justify"), Sym("right" if rot in (180, 270) else "left")])   # 270: text runs downward
         self.items.append([Sym("global_label"), net, [Sym("shape"), Sym(shape)], _at(at[0], at[1], rot), eff,
                            [Sym("uuid"), ids.other("label", self._n("label"))]])
 
