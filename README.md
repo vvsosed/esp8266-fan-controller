@@ -508,3 +508,7 @@ checkout creates its own with the `board attach` step in [Setup](#4-attach-board
 or passes `-b $FQBN` and `-p $PORT` explicitly.
 
 `git_hash.h` is ignored because `./build.sh` regenerates it on every build, and a commit can't contain its own hash.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
