@@ -77,6 +77,25 @@ class RoutingTest(unittest.TestCase):
         """The board matches the sheet in KiCad's own eyes: library ids, fields, BOM flags and the no-connect nets."""
         self.assertEqual(self.warn["schematic_parity"], [])
 
+    def test_fan_pins_named_in_full(self):
+        """Each fan pin carries its full name, centred over the pin just above the header body (the names are
+        wider than the 2.54 mm pitch, so they sit in two staggered rows), and `FAN n` stands beside the header."""
+        texts = [t for t in drawings(self.board) if t.GetClass() == "PCB_TEXT" and t.GetLayer() == pcbnew.F_SilkS]
+        for n, ref in enumerate(("J3", "J4", "J5"), 1):
+            fp = self.board.FindFootprintByReference(ref)
+            cy = fp.GetCourtyard(pcbnew.F_CrtYd).BBox()
+            top = mm(cy.GetTop())
+            for num, name in zip("1234", ("GND", "+12V", "TACH", "PWM")):
+                x = mm(fp.FindPadByNumber(num).GetPosition().x)
+                near = [t for t in texts if t.GetText() == name and abs(mm(t.GetBoundingBox().GetCenter().x) - x) < 0.3]
+                self.assertEqual(len(near), 1, (ref, name))
+                bottom = mm(near[0].GetBoundingBox().GetBottom())
+                self.assertTrue(top - 3.5 < bottom < top + 0.3, (ref, name, bottom, top))
+            fan = [t for t in texts if t.GetText() == f"FAN {n}"]
+            self.assertEqual(len(fan), 1, ref)
+            c = fan[0].GetBoundingBox().GetCenter()
+            self.assertTrue(cy.GetTop() < c.y < cy.GetBottom() and abs(mm(c.x) - mm(cy.GetLeft())) < 2.0, (ref, mm(c.x), mm(c.y)))
+
 
 if __name__ == "__main__":
     unittest.main()

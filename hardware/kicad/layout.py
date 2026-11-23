@@ -318,9 +318,11 @@ SILK = [
     ("S", (50.92, 33.0), 0, 0.8), ("D", (53.46, 33.0), 0, 0.8), ("G", (56.0, 33.0), 0, 0.8),
 ]
 for n, x in ((1, 11.0), (2, 30.5), (3, 50.0)):
-    for i, name in enumerate(("G", "+", "T", "P")):
-        SILK.append((name, (x + 2.54 * i, 41.3), 0, 0.9))
-    SILK.append((f"FAN {n}", (x + 3.81, 40.0), 0, 0.8))
+    # the pin names are wider than the 2.54 mm pitch: two staggered rows, each name centred over its pin. The upper row
+    # stays 0.3 mm off the pull-ups' lower pads (y 39.47) above J3; the lower row sits 0.4 mm above the body outline (y 42.91)
+    for i, name in enumerate(("GND", "+12V", "TACH", "PWM")):
+        SILK.append((name, (x + 2.54 * i, 40.5 if i % 2 == 0 else 42.0), 0, 0.8))
+    SILK.append((f"FAN {n}", (x - 2.86, 46.0), 90, 0.8))             # beside the header's pin-1 end, reading upward
 for i, name in enumerate(("TX", "RX", "GND")):
     SILK.append((name, (65.7, 9.0 + 2.54 * i), 0, 0.8, "F", "R"))     # right edges 0.2 mm short of the header bodies (x 65.93)
 for y0 in (20.0, 30.0):                                 # J6, J8
