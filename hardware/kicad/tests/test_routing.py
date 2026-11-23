@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import math
+
 import pcbnew
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -25,6 +27,34 @@ def tracks(b):
     """Tracks and vias; the SWIG iterator behind GetTracks() is broken, so index the container."""
     t = b.Tracks()
     return [t[i].Cast() for i in range(len(t))]
+
+
+def spokes(b, pad, layer, n=720):
+    """The widths in mm of the GND pour's spokes into the pad: the runs of copper on a circle through the middle of
+    the pad's thermal gap, where nothing else reaches. Sampled every 0.5 degrees."""
+    zones = b.Zones()
+    fills = [zones[i].GetFilledPolysList(layer) for i in range(len(zones))
+             if zones[i].GetNetname() == "GND" and not zones[i].GetIsRuleArea() and zones[i].IsOnLayer(layer)]
+    shape = pcbnew.SHAPE_POLY_SET()
+    pad.TransformShapeToPolygon(shape, layer, 0, pcbnew.FromMM(0.01), pcbnew.ERROR_INSIDE)
+    c = pad.GetPosition()
+    hits = []
+    for k in range(n):
+        a = 2 * math.pi * k / n
+        r = 0.0
+        while shape.Contains(pcbnew.VECTOR2I(int(c.x + r * 1e6 * math.cos(a)), int(c.y + r * 1e6 * math.sin(a)))):
+            r += 0.02
+        r += 0.25                                                         # half the 0.5 mm thermal gap out from the pad's edge
+        p = pcbnew.VECTOR2I(int(c.x + r * 1e6 * math.cos(a)), int(c.y + r * 1e6 * math.sin(a)))
+        hits.append(2 * math.pi * r / n if any(f.Contains(p) for f in fills) else 0.0)
+    runs, run = [], 0.0
+    for h in hits + hits[:1]:                                             # once round, then the first sample again to close a run
+        if h:
+            run += h
+        elif run:
+            runs.append(run)
+            run = 0.0
+    return runs
 
 
 class RoutingTest(unittest.TestCase):
@@ -72,6 +102,27 @@ class RoutingTest(unittest.TestCase):
         silk = [v["description"] + ": " + ", ".join(i["description"] for i in v["items"])
                 for v in self.warn["violations"] if v["type"] in ("silk_overlap", "silk_over_copper")]
         self.assertEqual(silk, [])
+
+    def test_no_zero_length_tracks(self):
+        """A route may name a pad whose centre is the previous point; that must not leave a zero-length track behind."""
+        zero = [(t.GetNetname(), mm(t.GetStart().x), mm(t.GetStart().y)) for t in tracks(self.board)
+                if t.GetClass() == "PCB_TRACK" and t.GetStart() == t.GetEnd()]
+        self.assertEqual(zero, [])
+
+    def test_power_return_pads_well_tied(self):
+        """The 12 V return pads (the input's GND, the fans' GND pins, the reverse diode) tie into the pours through
+        spokes about 1 mm wide, one of which carries the 1.5 A alone: at least one on each layer and three in all,
+        so a spoke lost to a nearby track still leaves two. (The fans' pins lose one to their +12V neighbour.)"""
+        for ref_pad in ("J2.2", "J3.1", "J4.1", "J5.1", "D2.2"):
+            ref, num = ref_pad.split(".")
+            pad = self.board.FindFootprintByReference(ref).FindPadByNumber(num)
+            self.assertEqual(pad.GetNetname(), "GND", ref_pad)
+            wide = 0
+            for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
+                widths = spokes(self.board, pad, layer)
+                self.assertTrue(any(w >= 0.95 for w in widths), (ref_pad, self.board.GetLayerName(layer), widths))
+                wide += sum(1 for w in widths if w >= 0.95)
+            self.assertGreaterEqual(wide, 3, ref_pad)
 
     def test_parity_clean_at_all_severities(self):
         """The board matches the sheet in KiCad's own eyes: library ids, fields, BOM flags and the no-connect nets."""

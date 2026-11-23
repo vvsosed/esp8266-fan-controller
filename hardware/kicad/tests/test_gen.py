@@ -13,18 +13,24 @@ FILES = ("fan_controller.kicad_sch", "fan_controller.kicad_pcb", "fan_controller
 
 
 class GenTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.full, cls.quick = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+        gen.write_all(cls.full)                       # with the exports (about 20 s), shared by the tests below
+        gen.write_all(cls.quick, quick=True)
+
     def test_deterministic(self):
-        a, b = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
-        gen.write_all(a, quick=True)
-        gen.write_all(b, quick=True)
         for name in FILES:
-            self.assertEqual((a / name).read_bytes(), (b / name).read_bytes(), name)
+            self.assertEqual((self.full / name).read_bytes(), (self.quick / name).read_bytes(), name)
 
     def test_committed_files_current(self):
-        a = Path(tempfile.mkdtemp())
-        gen.write_all(a, quick=True)
-        for name in FILES:
-            self.assertEqual((a / name).read_bytes(), (HERE.parent / name).read_bytes(), name)
+        """The committed project files and every file in out/ are what gen.py writes today; rerun it after a change."""
+        stale = [name for name in FILES if (self.full / name).read_bytes() != (HERE.parent / name).read_bytes()]
+        for f in sorted((self.full / "out").iterdir()):
+            c = HERE.parent / "out" / f.name
+            if f.is_file() and not (c.is_file() and c.read_bytes() == f.read_bytes()):
+                stale.append("out/" + f.name)
+        self.assertEqual(stale, [])
 
     def test_outputs_exist(self):
         out = HERE.parent / "out"

@@ -336,6 +336,11 @@ for i, name in enumerate(("12V", "GND", "FLOW")):
 TRACK_WIDTH = 0.3
 WIDTH = {"+12V_IN": 2.0, "+12V": 2.0, "+12V_SW": 2.0, "3V3": 0.5, "GND": 1.5}
 VIA = (0.8, 0.4)
+# the 12 V return pads: the input's GND, the fans' GND pins and the reverse diode tie into the GND pours through
+# 1 mm thermal spokes instead of the zones' 0.5 mm, so one spoke alone carries the 1.5 A; every other pad keeps
+# the narrow spokes that make it easy to solder
+WIDE_SPOKES = ("J2.2", "J3.1", "J4.1", "J5.1", "D2.2")
+SPOKE = 1.0
 ROUTES = [
     # ---- 12 V in: J2 to the fuse; the fused 12 V to the flow header on the back, under the input track
     ("+12V_IN", "F.Cu", ["J2.1", (8.9, 11.0), (8.9, 18.9), (11.55, 21.55), "F1.1"]),

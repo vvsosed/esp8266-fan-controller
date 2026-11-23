@@ -188,6 +188,8 @@ def add_tracks(board, layout, netinfo):
         width = route[3] if len(route) > 3 else layout.WIDTH.get(net, layout.TRACK_WIDTH)
         pts = [_point(board, p, net) for p in points]
         for a, b in zip(pts, pts[1:]):
+            if a == b:                                         # a pad named right where the route already is: nothing to draw
+                continue
             t = pcbnew.PCB_TRACK(board)
             t.SetStart(a)
             t.SetEnd(b)
@@ -209,6 +211,13 @@ def add_tracks(board, layout, netinfo):
         board.Add(v)
 
 
+def _spokes(board, layout):
+    """Wider thermal spokes on the 12 V return pads (layout.WIDE_SPOKES): the pours carry the fans' current back to J2."""
+    for ref_pad in layout.WIDE_SPOKES:
+        ref, num = ref_pad.split(".")
+        board.FindFootprintByReference(ref).FindPadByNumber(num).SetLocalThermalSpokeWidthOverride(mm(layout.SPOKE))
+
+
 KIID_SEED = 1       # pcbnew draws every item's identifier from one generator; seeded, the file comes out the same each run
 
 
@@ -225,6 +234,7 @@ def build(parts, nets, layout):
     _outline(board, layout.BOARD)
     for ref, part in parts.items():
         _place(board, part, layout.PCB_PARTS[ref], netinfo, layout.REF_AT.get(ref, "above"))
+    _spokes(board, layout)
     add_tracks(board, layout, netinfo)
     _zones(board, layout, netinfo["GND"])
     _silk(board, layout.SILK)

@@ -53,18 +53,37 @@ class BoardTest(unittest.TestCase):
         self.assertTrue(any(z.GetIsRuleArea() and z.GetDoNotAllowZoneFills() for z in self.board.Zones()))
 
     def test_fan_headers_same_way(self):
+        """The three fan headers in one row along the bottom edge, pin 1 at the left and the latch toward the edge.
+        The latch is the ramp the Molex footprint draws on silk: the long lines inside the body on one side of the pads."""
         rots = []
         for ref in ("J3", "J4", "J5"):
-            pads = {p.GetNumber(): p.GetPosition() for p in self.fps[ref].Pads()}
+            fp = self.fps[ref]
+            pads = {p.GetNumber(): p.GetPosition() for p in fp.Pads()}
             self.assertLess(pads["1"].x, pads["4"].x, ref)
             self.assertEqual(pads["1"].y, pads["4"].y, ref)
             self.assertGreaterEqual(mm(pads["1"].y), 42.0, ref)
-            rots.append(self.fps[ref].GetOrientationDegrees())
+            rots.append(fp.GetOrientationDegrees())
+            g = fp.GraphicalItems()
+            ramp = [d for d in (g[i].Cast() for i in range(len(g)))
+                    if d.GetClass() == "PCB_SHAPE" and d.GetLayer() == pcbnew.F_SilkS and d.GetShape() == pcbnew.SHAPE_T_SEGMENT
+                    and mm(abs(d.GetEnd().x - d.GetStart().x) + abs(d.GetEnd().y - d.GetStart().y)) > 5.0]
+            self.assertTrue(ramp, ref)
+            for d in ramp:
+                self.assertGreater(d.GetStart().y, pads["1"].y, (ref, "the latch faces the edge"))
         self.assertEqual(len(set(rots)), 1)
 
     def test_q3_tab_clear(self):
-        b = self.fps["Q3"].GetCourtyard(pcbnew.F_CrtYd).BBox()
-        band = (mm(b.GetLeft()), mm(b.GetBottom()), mm(b.GetRight()), mm(b.GetBottom()) + 3.0)   # the tab side is +y
+        """Nothing within 3 mm beyond Q3's tab, so a heatsink can go on. The tab is on the side the body extends
+        further from the pad row: a TO-220's leads leave near its front face."""
+        q3 = self.fps["Q3"]
+        b = q3.GetCourtyard(pcbnew.F_CrtYd).BBox()
+        ys = {p.GetPosition().y for p in q3.Pads()}
+        self.assertEqual(len(ys), 1, "the pad row is horizontal")
+        y = mm(ys.pop())
+        if mm(b.GetBottom()) - y > y - mm(b.GetTop()):
+            band = (mm(b.GetLeft()), mm(b.GetBottom()), mm(b.GetRight()), mm(b.GetBottom()) + 3.0)
+        else:
+            band = (mm(b.GetLeft()), mm(b.GetTop()) - 3.0, mm(b.GetRight()), mm(b.GetTop()))
         for ref, fp in self.fps.items():
             if ref == "Q3":
                 continue
