@@ -7,6 +7,7 @@ import pcbnew
 
 import ids
 import project
+import schematic
 
 FOOTPRINT_DIR = Path("/usr/share/kicad/footprints")
 PROJECT_FP = Path(__file__).resolve().parent / "fan_controller.pretty"
@@ -58,17 +59,35 @@ def _outline(board, size):
 
 
 def _place(board, part, place, netinfo, ref_at="above"):
+    """The footprint, placed and wired, matching its symbol the way Update PCB from Schematic would leave it:
+    library id, Datasheet and Description, the BOM flag, and a named net on every no-connect pad."""
     x, y, rot = place
     fp = load_footprint(part.footprint)
+    fp.SetFPID(pcbnew.LIB_ID(*part.footprint.split(":")))
     fp.SetReference(part.ref)
     fp.SetValue(part.value)
+    symbol = schematic.load_symbol(part.lib_id)
+    props = schematic._properties(symbol)
+    for field, name in ((pcbnew.FIELD_T_DATASHEET, "Datasheet"), (pcbnew.FIELD_T_DESCRIPTION, "Description")):
+        f = fp.GetField(field)
+        if f is not None:
+            f.SetText(props.get(name, ("",))[0])
+    attrs = fp.GetAttributes() & ~pcbnew.FP_EXCLUDE_FROM_BOM
+    fp.SetAttributes(attrs if schematic.in_bom(symbol) else attrs | pcbnew.FP_EXCLUDE_FROM_BOM)
+    names = schematic.pin_names(symbol)
     fp.SetPosition(at(x, y))
     fp.SetOrientationDegrees(rot)
     fp.SetPath(pcbnew.KIID_PATH(ids.path(part.ref)))
     fp.SetSheetfile(SHEET)
     fp.SetSheetname("Root")
     for pad in fp.Pads():
-        net = part.pins.get(pad.GetNumber())
+        num = pad.GetNumber()
+        net = part.pins.get(num)
+        if net is None and num in part.pins and num in names:           # a no-connect pin: the net KiCad's netlist gives it
+            net = f"unconnected-({part.ref}-{names[num]}-Pad{num})"
+            if net not in netinfo:
+                netinfo[net] = pcbnew.NETINFO_ITEM(board, net)
+                board.Add(netinfo[net])
         if net:
             pad.SetNet(netinfo[net])
     _reference(fp, ref_at)

@@ -119,8 +119,8 @@ def check(out):
     o.mkdir(exist_ok=True)
     sch, pcb = out / "fan_controller.kicad_sch", out / "fan_controller.kicad_pcb"
     problems = check_schematic(sch)
-    rep = board.drc(pcb)
-    problems += [f"DRC {v['type']}: {v['description']} at {v['items'][0]['pos']}" for v in rep["violations"]]
+    rep = board.drc(pcb, "all")                     # errors fail the build; a parity item does at any severity (KiCad rates them warnings)
+    problems += [f"DRC {v['type']}: {v['description']} at {v['items'][0]['pos']}" for v in rep["violations"] if v["severity"] == "error"]
     problems += ["open: " + " <-> ".join(i["description"] for i in v["items"]) for v in rep["unconnected_items"]]
     problems += [f"parity {v['type']}: {v['description']}" for v in rep["schematic_parity"]]
     _cli("sch", "erc", "--format", "report", "--severity-all", "-o", o / "erc.txt", sch)

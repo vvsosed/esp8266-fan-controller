@@ -73,5 +73,10 @@ class RoutingTest(unittest.TestCase):
                 for v in self.warn["violations"] if v["type"] in ("silk_overlap", "silk_over_copper")]
         self.assertEqual(silk, [])
 
+    def test_parity_clean_at_all_severities(self):
+        """The board matches the sheet in KiCad's own eyes: library ids, fields, BOM flags and the no-connect nets."""
+        self.assertEqual(self.warn["schematic_parity"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -84,5 +84,48 @@ class BoardTest(unittest.TestCase):
                     self.assertEqual(pad.GetNetname(), want, (ref, pad.GetNumber()))
 
 
+    def test_terminal_wire_entry_faces_edge(self):
+        """J2 takes its wires from the board's left edge. KiCad's Phoenix footprints put the pin-1 chamfer on the
+        wire-entry face, so that chamfer must sit on the edge side of the pads, not toward the fuse."""
+        j2 = self.fps["J2"]
+        items = j2.GraphicalItems()
+        fab = [d for d in (items[i].Cast() for i in range(len(items)))
+               if d.GetClass() == "PCB_SHAPE" and d.GetLayer() == pcbnew.F_Fab and d.GetShape() == pcbnew.SHAPE_T_SEGMENT]
+        chamfer = [d for d in fab if mm(abs(d.GetEnd().x - d.GetStart().x)) < 1.0 and mm(abs(d.GetEnd().y - d.GetStart().y)) < 1.0]
+        self.assertEqual(len(chamfer), 1)
+        mid_x = mm(chamfer[0].GetStart().x + chamfer[0].GetEnd().x) / 2
+        self.assertLess(mid_x, mm(j2.FindPadByNumber("1").GetPosition().x))
+
+    def test_no_front_track_crosses_castellations_between_pads(self):
+        """Only a pad's own exit may cross the module's pad lines on the front: a track passing between two
+        castellations is where solder from the module's edge bridges onto it."""
+        pads = list(self.fps["U1"].Pads())
+        groups = []
+        for key in (lambda p: p.GetPosition().x, lambda p: p.GetPosition().y):
+            by = {}
+            for p in pads:
+                by.setdefault(key(p), []).append(p)
+            groups += [g for g in by.values() if len(g) >= 3]
+        self.assertEqual(len(groups), 3)                                   # two columns and the bottom row
+        tracks = self.board.Tracks()
+        for t in (tracks[i].Cast() for i in range(len(tracks))):
+            if t.GetClass() != "PCB_TRACK" or t.GetLayer() != pcbnew.F_Cu:
+                continue
+            a, b = t.GetStart(), t.GetEnd()
+            for g in groups:
+                column = len({p.GetPosition().x for p in g}) == 1
+                c = g[0].GetPosition().x if column else g[0].GetPosition().y
+                lo, hi = (a.x, b.x) if column else (a.y, b.y)
+                if not min(lo, hi) < c < max(lo, hi):                      # an exit starts on the line: not a crossing
+                    continue
+                f = (c - lo) / (hi - lo)
+                along = a.y + f * (b.y - a.y) if column else a.x + f * (b.x - a.x)
+                spans = [((p.GetPosition().y, p.GetBoundingBox().GetHeight() / 2) if column
+                          else (p.GetPosition().x, p.GetBoundingBox().GetWidth() / 2)) for p in g]
+                if not min(s - h for s, h in spans) <= along <= max(s + h for s, h in spans):
+                    continue                                               # beyond the row: it merely passes the module
+                self.assertTrue(any(abs(along - s) <= h for s, h in spans), (t.GetNetname(), mm(c), mm(along)))
+
+
 if __name__ == "__main__":
     unittest.main()

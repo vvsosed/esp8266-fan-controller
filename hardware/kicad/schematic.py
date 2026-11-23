@@ -68,6 +68,17 @@ def pin_offsets(symbol):
     return out
 
 
+def pin_names(symbol):
+    """pin number -> pin name from a library symbol: KiCad names a no-connect pin's net after them."""
+    return {find(p, "number")[1]: find(p, "name")[1] for u in find_all(symbol, "symbol") for p in find_all(u, "pin")}
+
+
+def in_bom(symbol):
+    """The library symbol's own BOM flag (a mounting hole says no)."""
+    flag = find(symbol, "in_bom")
+    return flag is None or flag[1] == Sym("yes")
+
+
 def _properties(symbol):
     """property name -> (value, (x, y, angle), hidden, justify) from a library symbol."""
     out = {}
@@ -192,7 +203,7 @@ class Schematic:
             props["Value"] = (value_at, justify, angle)
         if ref_at:
             props["Reference"] = (ref_at, justify, angle)
-        self._instance(part.lib_id, part.ref, part.value, part.footprint, place, True, props=props)
+        self._instance(part.lib_id, part.ref, part.value, part.footprint, place, in_bom(self._symbol(part.lib_id)), props=props)
 
     def add_power(self, net, at, rot=0):
         lib_id = POWER_LIB.get(net, "power:+12V")
