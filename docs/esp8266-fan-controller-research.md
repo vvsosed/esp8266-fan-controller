@@ -230,6 +230,8 @@ GND ─────────────────────────�
 |---|---|---|
 | 1 | ESP8266 board (Wemos D1 mini or NodeMCU) | |
 | 1 | 12 V DC supply | ≥ sum of fan currents + margin |
+| 1 | Polyfuse MF-R250 | PCB version only: resettable fuse on the 12 V input, 2.5 A hold, radial, 5.1 mm pitch |
+| 1 | 1N5401 diode | PCB version only: across the fused 12 V input, cathode to +12 V, so a reversed supply trips the fuse |
 | 1 | Buck converter 12 V → 5 V | Feeds the board |
 | 1 | NPN 2N3904 / BC547 (or 2N7000 / BSS138) | PWM driver, shared by the three fans |
 | 1 | 1 kΩ resistor | NPN base resistor (not needed with a MOSFET) |
