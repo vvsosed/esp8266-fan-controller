@@ -190,7 +190,13 @@ def add_tracks(board, layout, netinfo):
         board.Add(v)
 
 
+KIID_SEED = 1       # pcbnew draws every item's identifier from one generator; seeded, the file comes out the same each run
+
+
 def build(parts, nets, layout):
+    for name in sorted({p.footprint for p in parts.values()}):   # warm pcbnew's footprint cache first: a library load
+        load_footprint(name)                                       # draws identifiers too, and only on the first load
+    pcbnew.KIID.SeedGenerator(KIID_SEED)
     board = pcbnew.CreateEmptyBoard()
     _settings(board)
     netinfo = {}

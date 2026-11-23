@@ -1,5 +1,7 @@
 build/
 out/
+# ...except the KiCad fab files, which are committed (their Gerber folder below is not: the zip is)
+!hardware/kicad/out/
 sketch.yaml
 git_hash.h
 __pycache__/

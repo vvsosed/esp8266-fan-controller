@@ -5,8 +5,12 @@
 
 Change the circuit in docs/board/data.py, the geometry in layout.py; never edit the generated files.
 """
+import re
 import shutil
+import subprocess
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -81,26 +85,107 @@ def write_board(out=HERE / "fan_controller.kicad_pcb"):
     return out
 
 
+GERBER_LAYERS = "F.Cu,B.Cu,F.SilkS,B.SilkS,F.Mask,B.Mask,Edge.Cuts"
+OUTPUTS = ("schematic.pdf", "schematic.svg", "bom.csv", "gerbers.zip", "board-top.png", "board-bottom.png", "board-copper.svg",
+           "erc.txt", "drc.txt")
+# kicad-cli stamps its outputs with the time it ran; the title block's date goes there instead, so a rerun gives the same bytes
+STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)?|(?<=date )\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
+PDF_STAMP = re.compile(rb"D:\d{4}:\d{2}:\d{2}:\d{2}:\d{2}:\d{2}")
+
+
+def _cli(*args):
+    r = subprocess.run([board.KICAD_CLI, *map(str, args)], capture_output=True, text=True)
+    if r.returncode != 0:
+        noise = ("assert", "property.h", "Debug:")
+        raise RuntimeError("kicad-cli " + " ".join(map(str, args[:3])) + " failed:\n"
+                           + "\n".join(l for l in (r.stdout + r.stderr).splitlines() if not any(n in l for n in noise)))
+
+
+def _undate(path):
+    date = layout.TITLE["date"]
+    if path.suffix == ".pdf":
+        pdf = PDF_STAMP.sub(("D:" + date.replace("-", ":") + ":00:00:00").encode(), path.read_bytes())    # same length: offsets hold
+        path.write_bytes(pdf)
+        return
+    text = path.read_text(encoding="utf-8", errors="surrogateescape")
+    path.write_text(STAMP.sub(date, text), encoding="utf-8", errors="surrogateescape")
+
+
+def check(out):
+    """ERC errors, the sheet's nets against the derived netlist, DRC errors, open connections and schematic parity.
+    Writes out/erc.txt and out/drc.txt (every severity, to read); returns the problems, empty when all is clean."""
+    out = Path(out)
+    o = out / "out"
+    o.mkdir(exist_ok=True)
+    sch, pcb = out / "fan_controller.kicad_sch", out / "fan_controller.kicad_pcb"
+    problems = check_schematic(sch)
+    rep = board.drc(pcb)
+    problems += [f"DRC {v['type']}: {v['description']} at {v['items'][0]['pos']}" for v in rep["violations"]]
+    problems += ["open: " + " <-> ".join(i["description"] for i in v["items"]) for v in rep["unconnected_items"]]
+    problems += [f"parity {v['type']}: {v['description']}" for v in rep["schematic_parity"]]
+    _cli("sch", "erc", "--format", "report", "--severity-all", "-o", o / "erc.txt", sch)
+    _cli("pcb", "drc", "--format", "report", "--schematic-parity", "--refill-zones", "--severity-all", "-o", o / "drc.txt", pcb)
+    _undate(o / "erc.txt")
+    _undate(o / "drc.txt")
+    return problems
+
+
+def export(out):
+    """The fab files into out/: Gerbers + drill (zipped, fixed timestamps), BOM, PDF and SVG schematic, renders, copper SVG."""
+    out = Path(out)
+    o = out / "out"
+    g = o / "gerbers"
+    shutil.rmtree(g, ignore_errors=True)
+    g.mkdir(parents=True)
+    sch, pcb = out / "fan_controller.kicad_sch", out / "fan_controller.kicad_pcb"
+    _cli("sch", "export", "pdf", "-o", o / "schematic.pdf", sch)
+    with tempfile.TemporaryDirectory() as d:                                  # the SVG export names its file after the sheet
+        _cli("sch", "export", "svg", "-o", d, sch)
+        shutil.move(next(Path(d).glob("*.svg")), o / "schematic.svg")
+    _cli("sch", "export", "bom", "-o", o / "bom.csv", "--fields", "Reference,Value,Footprint,${QUANTITY}",
+         "--labels", "Refs,Value,Footprint,Qty", "--group-by", "Value,Footprint", "--exclude-dnp", sch)
+    _cli("pcb", "export", "gerbers", "-o", str(g) + "/", "--layers", GERBER_LAYERS, "--subtract-soldermask", pcb)
+    _cli("pcb", "export", "drill", "-o", str(g) + "/", "--format", "excellon", "--excellon-units", "mm",
+         "--generate-map", "--map-format", "gerberx2", pcb)
+    for f in g.iterdir():
+        _undate(f)
+    y, m, d = (int(v) for v in layout.TITLE["date"].split("-"))
+    with zipfile.ZipFile(o / "gerbers.zip", "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(g.iterdir()):
+            z.writestr(zipfile.ZipInfo(f.name, (y, m, d, 0, 0, 0)), f.read_bytes(), zipfile.ZIP_DEFLATED)
+    for side in ("top", "bottom"):             # basic quality: the ray-traced "high" differs in a few pixels on every run
+        _cli("pcb", "render", "--side", side, "--quality", "basic", "--width", "1600", "--height", "1200",
+             "-o", o / f"board-{side}.png", pcb)
+    _cli("pcb", "export", "svg", "--layers", "F.Cu,B.Cu,F.SilkS,Edge.Cuts", "--page-size-mode", "2", "--exclude-drawing-sheet",
+         "-o", o / "board-copper.svg", pcb)
+    for name in ("schematic.pdf", "schematic.svg", "board-copper.svg"):
+        _undate(o / name)
+
+
 def write_all(out=HERE, quick=False):
-    """Project files, schematic and board into `out`; later: checks and exports unless quick."""
+    """Project files, schematic and board into `out`, then the checks and, unless quick, the fab exports.
+    Returns the problems the checks found (empty = clean)."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     project.write_project(out)
     if out.resolve() != HERE:                                  # the project's own library next to the files
         shutil.copy(HERE / "fan_controller.kicad_sym", out)
         shutil.copytree(HERE / "fan_controller.pretty", out / "fan_controller.pretty", dirs_exist_ok=True)
-    sch = write_schematic(out / "fan_controller.kicad_sch")
-    pcb = write_board(out / "fan_controller.kicad_pcb")
-    return sch, pcb
+    write_schematic(out / "fan_controller.kicad_sch")
+    write_board(out / "fan_controller.kicad_pcb")
+    problems = check(out)
+    if not quick:
+        export(out)
+    return problems
 
 
 def main(argv):
     quick = "--quick" in argv
-    sch, pcb = write_all(HERE, quick)
-    problems = check_schematic(sch)
+    problems = write_all(HERE, quick)
     for p in problems:
         print(p)
-    print(f"schematic: {len(netlist.PARTS)} parts, {len(netlist.NETS)} nets, {len(problems)} problems")
+    state = "clean" if not problems else f"{len(problems)} problem{'s' if len(problems) > 1 else ''}"
+    print(f"{len(netlist.PARTS)} parts, {len(netlist.NETS)} nets: {state}" + ("" if quick else "; fab files in out/"))
     return 1 if problems else 0
 
 
