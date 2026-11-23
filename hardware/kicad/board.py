@@ -147,6 +147,49 @@ def _silk(board, items):
         board.Add(t)
 
 
+def _point(board, pt, net):
+    """A route point: (x, y) in mm, or "REF.PAD" for a pad centre, which must belong to `net`."""
+    if isinstance(pt, str):
+        ref, num = pt.split(".")
+        fp = board.FindFootprintByReference(ref)
+        pad = fp.FindPadByNumber(num) if fp else None
+        if pad is None:
+            raise KeyError(pt)
+        if pad.GetNetname() != net:
+            raise ValueError(f"{pt} is on {pad.GetNetname() or 'no net'}, not {net}")
+        return pad.GetPosition()
+    return at(*pt)
+
+
+def add_tracks(board, layout, netinfo):
+    """layout.ROUTES: (net, layer, points[, width]); layout.VIAS: (net, (x, y)). Width from layout.WIDTH, else 0.3."""
+    layers = {"F.Cu": pcbnew.F_Cu, "B.Cu": pcbnew.B_Cu}
+    for route in layout.ROUTES:
+        net, layer, points = route[:3]
+        width = route[3] if len(route) > 3 else layout.WIDTH.get(net, layout.TRACK_WIDTH)
+        pts = [_point(board, p, net) for p in points]
+        for a, b in zip(pts, pts[1:]):
+            t = pcbnew.PCB_TRACK(board)
+            t.SetStart(a)
+            t.SetEnd(b)
+            t.SetWidth(mm(width))
+            t.SetLayer(layers[layer])
+            t.SetNet(netinfo[net])
+            board.Add(t)
+    for net, (x, y) in layout.VIAS:
+        v = pcbnew.PCB_VIA(board)
+        v.SetPosition(at(x, y))
+        v.SetViaType(pcbnew.VIATYPE_THROUGH)
+        v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+        try:
+            v.SetWidth(mm(layout.VIA[0]))
+        except TypeError:                                      # KiCad 10 takes the layer too
+            v.SetWidth(pcbnew.PADSTACK.ALL_LAYERS, mm(layout.VIA[0]))
+        v.SetDrill(mm(layout.VIA[1]))
+        v.SetNet(netinfo[net])
+        board.Add(v)
+
+
 def build(parts, nets, layout):
     board = pcbnew.CreateEmptyBoard()
     _settings(board)
@@ -157,6 +200,7 @@ def build(parts, nets, layout):
     _outline(board, layout.BOARD)
     for ref, part in parts.items():
         _place(board, part, layout.PCB_PARTS[ref], netinfo, layout.REF_AT.get(ref, "above"))
+    add_tracks(board, layout, netinfo)
     _zones(board, layout, netinfo["GND"])
     _silk(board, layout.SILK)
     tb = board.GetTitleBlock()
@@ -172,10 +216,10 @@ def save(board, path):
     pcbnew.SaveBoard(str(path), board)
 
 
-def drc(path):
-    """kicad-cli's DRC report as a dict: 'violations', 'unconnected_items', 'schematic_parity'."""
+def drc(path, severity="error"):
+    """kicad-cli's DRC report as a dict: 'violations', 'unconnected_items', 'schematic_parity'. severity "all" adds warnings."""
     out = Path(path).with_suffix(".drc.json")
-    subprocess.run([KICAD_CLI, "pcb", "drc", "--format", "json", "--schematic-parity", "--refill-zones", "--severity-error",
+    subprocess.run([KICAD_CLI, "pcb", "drc", "--format", "json", "--schematic-parity", "--refill-zones", "--severity-" + severity,
                     "-o", str(out), str(path)], check=False, capture_output=True, text=True)
     rep = json.loads(out.read_text(encoding="utf-8"))
     out.unlink()

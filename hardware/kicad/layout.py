@@ -273,26 +273,25 @@ PCB_PARTS = {
     # pull-ups of the module's left-hand pins, in the gap between F1 and the module
     "R1": (17.5, 10.0, 270),         # RST
     "R2": (20.7, 10.0, 270),         # EN
-    "R3": (17.5, 20.0, 270),         # IO16
     "R4": (18.5, 31.0, 270),         # TACH3, with the flow stage
     "SW1": (15.9, 2.0, 0),           # RST, top-left corner next to the module's RST pad
     # flow input stage, bottom-left
     "Q4": (6.5, 36.0, 90),
-    "R13": (11.0, 31.0, 270),        # pin 1 (top) FLOW side, pin 2 (bottom) Q4 base
+    "R13": (11.0, 38.62, 90),        # pin 1 (bottom) FLOW, pin 2 (top) Q4 base
     "R14": (14.5, 31.0, 270),
     # 3.3 V regulator under the module, IN pads on the left
     "U2": (35.0, 27.5, 0),
     # PWM driver below the regulator
     "R5": (27.5, 36.0, 0),
-    "Q1": (38.5, 38.0, 0),
+    "Q1": (38.5, 36.9, 0),           # clear of the PWM bus below, so its GND pad gets a proper pour around it
     # fans along the bottom edge, pin 1 left, latch toward the edge
     "J3": (11.0, 46.0, 0),
     "J4": (30.5, 46.0, 0),
     "J5": (50.0, 46.0, 0),
     # top-right: FLASH button, the pull-ups of the module's right-hand pins, serial header
     "SW2": (47.6, 2.0, 0),
-    "R7": (47.9, 10.0, 270),         # TACH1
-    "R8": (51.3, 10.0, 270),         # TACH2
+    "R8": (47.9, 10.0, 270),         # TACH2: the lower module pad takes the nearer resistor, so the two tach tracks don't cross
+    "R7": (51.3, 10.0, 270),         # TACH1
     "R9": (54.7, 10.0, 270),         # IO0
     "R10": (58.1, 10.0, 270),        # DQ
     "R11": (61.5, 10.0, 270),        # IO15 pull-down
@@ -302,9 +301,10 @@ PCB_PARTS = {
     # reverse diode on the +12V trunk, then the 12 V switch, right-middle, Q3's tab toward the fans
     "D2": (48.0, 21.8, 0),           # cathode (band) at the left pad
     "Q2": (47.6, 31.0, 90),
-    "D1": (51.2, 30.0, 0),           # cathode at the left pad
-    "R6": (60.4, 33.0, 270),         # pin 1 (top) IO16, pin 2 Q2 base
-    "R12": (46.4, 33.2, 270),        # gate pull-up: pin 1 (top) GATE, pin 2 +12V
+    "D1": (53.46, 30.5, 0),          # cathode at the left pad, straight above Q3's drain; its K mark clears R12's pad
+    "R3": (63.7, 37.6, 270),         # IO16 pull-up, standing (P2.54): pin 1 (top) IO16, pin 2 (63.7, 40.14) 3V3; below J8's pin labels
+    "R6": (60.4, 33.5, 270),         # pin 1 (top) IO16, pin 2 Q2 base; half a millimetre below D1's courtyard
+    "R12": (61.5, 26.5, 180),        # gate pull-up: pin 1 (right) GATE, pin 2 (53.88, 26.5) +12V, off the trunk; body clear of D1's K mark
     "Q3": (56.0, 35.5, 180),         # G (56, 35.5), D (53.46, 35.5), S (50.92, 35.5)
 }
 PCB_PARTS.update({ref: (x, y, 0) for ref, (x, y) in HOLES.items()})
@@ -322,20 +322,115 @@ for n, x in ((1, 11.0), (2, 30.5), (3, 50.0)):
         SILK.append((name, (x + 2.54 * i, 41.3), 0, 0.9))
     SILK.append((f"FAN {n}", (x + 3.81, 40.0), 0, 0.8))
 for i, name in enumerate(("TX", "RX", "GND")):
-    SILK.append((name, (65.5, 9.0 + 2.54 * i), 0, 0.8, "F", "R"))
-for y0 in (20.0, 30.0):
+    SILK.append((name, (65.7, 9.0 + 2.54 * i), 0, 0.8, "F", "R"))     # right edges 0.2 mm short of the header bodies (x 65.93)
+for y0 in (20.0, 30.0):                                 # J6, J8
     for i, name in enumerate(("3V3", "DQ", "GND")):
-        SILK.append((name, (65.5, y0 + 2.54 * i), 0, 0.8, "F", "R"))
+        SILK.append((name, (65.7, y0 + 2.54 * i), 0, 0.8, "F", "R"))
 for i, name in enumerate(("12V", "GND", "FLOW")):
     SILK.append((name, (5.8, 22.5 + 2.54 * i), 0, 0.8, "F", "L"))
+
+# ---- copper. A route is (net, layer, points[, width]); a point is (x, y) or "REF.PAD" (the pad centre, checked
+# against the net). Widths per net, else TRACK_WIDTH. Vias are (net, (x, y)), VIA = (diameter, drill).
+TRACK_WIDTH = 0.3
+WIDTH = {"+12V_IN": 2.0, "+12V": 2.0, "+12V_SW": 2.0, "3V3": 0.5, "GND": 1.5}
+VIA = (0.8, 0.4)
+ROUTES = [
+    # ---- 12 V in: J2 to the fuse; the fused 12 V to the flow header on the back, under the input track
+    ("+12V_IN", "F.Cu", ["J2.1", (11.55, 21.55), "F1.1"]),
+    ("+12V", "B.Cu", ["F1.2", (11.0, 18.95), (5.0, 18.95), "J7.1"], 1.5),
+    # the +12V trunk: up between the pull-ups, under the module's bottom pads, to the reverse diode, down to Q3's source
+    ("+12V", "F.Cu", ["F1.2", (13.5, 14.0), (23.0, 14.0), (23.0, 20.0), (48.0, 20.0), "D2.1", (50.92, 24.72), "Q3.3"]),
+    ("+12V", "F.Cu", [(27.38, 20.0), "U2.1"]),
+    ("+12V", "F.Cu", [(50.92, 26.5), "R12.2"], 1.5),
+    # the switched 12 V: D1 straight above Q3's drain; from the drain down to the fan row on the back, spurs up to the headers
+    ("+12V_SW", "F.Cu", ["D1.1", "Q3.2"]),
+    ("+12V_SW", "B.Cu", ["Q3.2", (53.46, 43.6), (13.54, 43.6), "J3.2"]),
+    ("+12V_SW", "B.Cu", [(33.04, 43.6), "J4.2"], 1.5),
+    ("+12V_SW", "B.Cu", [(52.54, 43.6), "J5.2"], 1.5),
+    # the module's GND pad sits in the keep-out, where the pours don't fill: down to a via, under the trunk on the back, out to the pours
+    ("GND", "F.Cu", ["U1.15", (42.6, 17.9)], 0.5),
+    ("GND", "B.Cu", [(42.6, 17.9), (40.0, 20.5), (40.0, 21.8)], 0.5),
+    # ---- module right side: serial between the FLASH button's pad rows, the tach lines under the button, the rest as a staircase
+    ("TX", "F.Cu", ["U1.22", (44.4, 1.5), (46.5, 3.6), (56.5, 3.6), (60.5, 7.6), (65.8, 7.6), "J1.1"]),
+    ("RX", "F.Cu", ["U1.21", (44.4, 3.5), (45.5, 4.6), (56.5, 4.6), (60.5, 8.6), (63.3, 8.6), (66.24, 11.54), "J1.2"]),
+    ("TACH1", "F.Cu", ["U1.20", (44.4, 5.5), (47.25, 8.35), (49.65, 8.35), "R7.1"]),
+    ("TACH2", "F.Cu", ["U1.19", (44.4, 7.5), (46.9, 10.0), "R8.1"]),
+    ("IO0", "F.Cu", ["U1.18", (44.4, 9.5), (47.1, 12.2), (52.5, 12.2), "R9.1"]),
+    ("IO0", "B.Cu", ["R9.1", (55.6, 9.1), (55.6, 2.0), "SW2.1", (47.6, 2.0)]),
+    ("DQ", "F.Cu", ["U1.17", (44.4, 11.5), (46.5, 13.6), (56.0, 13.6), (58.1, 11.5), "R10.1"]),
+    ("IO15", "F.Cu", ["U1.16", (44.4, 13.5), (45.9, 15.0), (60.0, 15.0), (61.5, 13.5), "R11.1"]),
+    # 3V3: the regulator's output crosses under the trunk to the pull-up row, then on to the sensor headers and R3
+    ("3V3", "B.Cu", ["U2.3", (44.5, 21.05), (44.5, 18.5), (45.38, 17.62), "R8.2"]),
+    ("3V3", "F.Cu", ["R8.2", "R7.2", "R9.2", "R10.2", (59.78, 19.3), (66.5, 19.3), "J6.1"]),
+    ("3V3", "F.Cu", ["J6.1", (68.7, 21.5), (68.7, 28.5), "J8.1", (68.7, 31.5), (68.7, 38.64), (67.2, 40.14), "R3.2"]),
+    ("DQ", "F.Cu", ["J6.2", (65.7, 24.04), (65.7, 31.04), "J8.2"]),
+    ("DQ", "B.Cu", ["R10.1", (59.8, 8.3), (63.6, 8.3), (65.3, 10.0), (65.3, 20.6), "J6.2"]),
+    # the module's VCC: a via beside the pad, then on the back down and under the regulator to its output
+    ("3V3", "F.Cu", ["U1.8", (28.4, 14.6), (29.3, 14.6)]),
+    ("3V3", "B.Cu", [(29.3, 14.6), (29.3, 23.0), (30.8, 24.5), (40.9, 24.5), (42.47, 22.93), "U2.3"]),
+    # ---- module left side. RST round the west of the button; EN straight to its pull-up
+    ("RST", "F.Cu", ["U1.1", (22.9, 1.5), "SW1.1", (15.9, 2.0), (14.4, 3.5), (14.4, 8.5), (15.9, 10.0), "R1.1"]),
+    ("EN", "F.Cu", ["U1.3", (24.2, 5.5), (24.2, 7.9), (23.5, 8.6), (21.9, 8.6), (20.7, 9.8), "R2.1"]),
+    # IO16 goes east on the back, under the module and the pull-up bodies, down the right edge to R3, then to R6
+    ("IO16", "F.Cu", ["U1.4", (25.3, 7.5)]),
+    ("IO16", "B.Cu", [(25.3, 7.5), (26.3, 8.5), (26.3, 11.5), (27.3, 12.5), (62.4, 12.5), (64.4, 14.5), (64.4, 36.9), (63.7, 37.6), "R3.1"]),
+    ("IO16", "F.Cu", ["R3.1", "R6.1"]),
+    # TACH3, IO12 and IO13 drop to the back beside the module and run south in three lanes
+    ("TACH3", "F.Cu", ["U1.5", (22.6, 9.5)]),
+    ("TACH3", "B.Cu", [(22.6, 9.5), (22.6, 26.5), (8.0, 26.5)]),
+    ("TACH3", "F.Cu", ["R4.1", (18.5, 26.5)]),
+    ("TACH3", "F.Cu", [(8.0, 26.5), (8.0, 48.4), (55.08, 48.4), "J5.3"]),
+    ("IO12", "F.Cu", ["U1.6", (25.3, 11.5)]),
+    ("IO12", "B.Cu", [(25.3, 11.5), (25.7, 11.9), (25.7, 36.0), "R5.1"]),
+    ("IO13", "F.Cu", ["U1.7", (24.7, 13.5)]),
+    ("IO13", "B.Cu", [(24.7, 13.5), (24.7, 14.5), (23.5, 15.7), (23.5, 29.6), (7.8, 29.6), "Q4.3"]),
+    ("IO13", "B.Cu", ["R14.1", (14.5, 29.6)]),
+    # the left 3V3 group: pull-ups, C1, down to R4 and R14, and from R4 on the back to the regulator's output
+    ("3V3", "B.Cu", ["R1.2", "R2.2"]),
+    ("3V3", "F.Cu", ["R2.2", "C1.1", (22.0, 22.8), (22.0, 36.0), (19.38, 38.62), "R4.2", "R14.2"]),
+    ("3V3", "B.Cu", ["R4.2", (19.7, 37.4), (32.4, 37.4), (33.5, 36.3), (33.5, 25.6), (34.6, 24.5)]),
+    # flow stage
+    ("FLOW", "B.Cu", ["J7.3", (3.5, 37.6), (4.5, 38.62), "R13.1"]),
+    ("Q4_B", "B.Cu", ["Q4.2", (8.0, 31.96), (10.0, 31.96), "R13.2"]),
+    # PWM driver and bus (front, above the fan row), the tach lines dropping under it through vias
+    ("Q1_B", "B.Cu", ["R5.2", (35.37, 35.75), (40.0, 35.75), (41.04, 36.79), "Q1.2"]),
+    ("PWM", "F.Cu", ["Q1.3", (43.58, 40.6)]),
+    ("PWM", "F.Cu", [(18.62, 40.6), (57.62, 40.6)]),
+    ("PWM", "F.Cu", ["J3.4", (18.62, 40.6)]),
+    ("PWM", "F.Cu", ["J4.4", (38.12, 40.6)]),
+    ("PWM", "F.Cu", ["J5.4", (57.62, 40.6)]),
+    ("TACH1", "F.Cu", ["J3.3", (16.08, 41.75)]),
+    ("TACH1", "B.Cu", [(16.08, 41.75), (16.08, 30.6)]),
+    ("TACH1", "F.Cu", [(16.08, 30.6), (16.08, 21.0), (19.2, 17.88), (19.2, 16.3)]),
+    ("TACH1", "B.Cu", [(19.2, 16.3), (19.2, 11.9)]),
+    ("TACH1", "F.Cu", [(19.2, 11.9), (19.2, 4.5), (41.6, 4.5), "U1.20"]),
+    ("TACH2", "F.Cu", ["J4.3", (35.58, 41.75)]),
+    ("TACH2", "B.Cu", [(35.58, 41.75), (37.0, 40.33), (37.0, 39.3)]),
+    ("TACH2", "F.Cu", [(37.0, 39.3), (37.0, 22.3)]),
+    ("TACH2", "B.Cu", [(37.0, 22.3), (37.0, 14.3)]),
+    ("TACH2", "F.Cu", [(37.0, 14.3), (37.0, 9.0), (37.5, 8.5), (41.6, 8.5), "U1.19"]),
+    # the 12 V switch: gate net on the back round the reverse diode, Q2's base on the front under Q3
+    ("GATE", "B.Cu", ["Q2.3", (49.12, 24.4), (60.1, 24.4), (61.5, 25.8), "R12.1"]),
+    ("GATE", "F.Cu", ["R12.1", (58.9, 28.1), (58.9, 32.6), "Q3.1"]),
+    ("Q2_B", "F.Cu", ["Q2.2", (49.1, 29.96), (49.1, 36.6), (50.5, 38.0), (59.0, 38.0), (60.4, 39.4), "R6.2"]),
+]
+VIAS = [
+    ("GND", (42.6, 17.9)), ("GND", (40.0, 21.8)),
+    ("3V3", (29.3, 14.6)),
+    ("IO16", (25.3, 7.5)), ("TACH3", (22.6, 9.5)), ("TACH3", (8.0, 26.5)), ("TACH3", (18.5, 26.5)),
+    ("IO12", (25.3, 11.5)), ("IO13", (24.7, 13.5)),
+    ("TACH1", (16.08, 41.75)), ("TACH1", (16.08, 30.6)), ("TACH1", (19.2, 16.3)), ("TACH1", (19.2, 11.9)),
+    ("TACH2", (35.58, 41.75)), ("TACH2", (37.0, 39.3)), ("TACH2", (37.0, 22.3)), ("TACH2", (37.0, 14.3)),
+    ("GND", (27.4, 27.5)), ("GND", (31.5, 30.0)), ("GND", (26.9, 34.5)), ("GND", (24.0, 33.0)), ("GND", (35.25, 31.5)), ("GND", (40.0, 39.3)),
+]
 
 # Reference designators on the silkscreen: "above" (centred over the courtyard), "hide", or (x, y, rotation)
 REF_AT = {
     "U1": (35.0, 18.5, 0), "U2": "above", "J2": (12.5, 8.8, 0), "J7": "above", "F1": "above",
     "SW1": (11.0, 6.0, 0), "SW2": (59.0, 6.0, 0), "C1": "above",
-    "R3": (17.5, 29.3, 0), "R4": (20.6, 34.81, 90), "Q4": (6.15, 37.65, 0),
-    "R5": (31.31, 38.1, 0), "Q1": "above",
-    "D2": (63.6, 21.3, 0), "Q2": (50.6, 26.5, 0), "D1": "above", "R6": (60.4, 42.3, 0), "R12": (46.4, 42.3, 0), "Q3": (57.9, 33.0, 0),
+    "R4": (20.6, 34.81, 90), "Q4": (6.15, 37.65, 0),
+    "R5": (31.31, 38.1, 0), "Q1": (45.6, 36.9, 0),
+    "D2": (63.6, 21.3, 0), "Q2": (50.6, 26.5, 0), "D1": (57.27, 30.5, 0), "R12": (57.7, 26.5, 0), "R3": (67.2, 38.4, 0), "R6": (60.4, 42.8, 0), "Q3": (57.9, 33.0, 0),
     "J1": (67.2, 16.5, 0), "J6": (67.2, 17.6, 0), "J8": (67.2, 27.6, 0),
     "J3": "hide", "J4": "hide", "J5": "hide", "H1": "hide", "H2": "hide", "H3": "hide", "H4": "hide",
 }

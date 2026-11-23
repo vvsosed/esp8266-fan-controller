@@ -54,7 +54,7 @@ MODULE_PIN = {"RST": "1", "ADC": "2", "EN": "3", "IO16": "4", "IO14": "5", "IO12
 KIND = {
     "res": ("Device:R", "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal", ["1", "2"]),
     "cap": ("Device:C", "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P2.50mm", ["1", "2"]),
-    "diode": ("Diode:1N5819", "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", ["2", "1"]),     # anode hole first
+    "diode": ("Diode:1N5819", "Diode_THT:D_DO-41_SOD81_P7.62mm_Horizontal", ["2", "1"]),     # anode hole first
     "to92v": ("Transistor_BJT:2N3904", "Package_TO_SOT_THT:TO-92_Inline_Wide", ["3", "2", "1"]),   # C, B, E
     "to220": ("Transistor_FET:IRF9540N", "Package_TO_SOT_THT:TO-220-3_Vertical", ["3", "2", "1"]),   # S, D, G
     "tact": ("Switch:SW_Push", "Button_Switch_THT:SW_PUSH_6mm", ["1", "1", "2", "2"]),
@@ -63,6 +63,7 @@ KIND = {
     "term": ("Connector:Screw_Terminal_01x02", "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal", ["1", "2"]),
     "buck": ("fan_controller:Mini-360", "fan_controller:Mini-360", ["1", "2", "3", "4"]),
 }
+FOOTPRINT = {"R3": "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P2.54mm_Vertical"}   # standing: the only one that fits below J8's labels
 
 ADDED = [
     Part("F1", "Device:Polyfuse", "fan_controller:Polyfuse_Radial_P5.1mm", "MF-R250", {"1": "+12V_IN", "2": "+12V"}),
@@ -83,6 +84,7 @@ def build():
             pins = {MODULE_PIN[name]: NET_NAME[hole_net[h]] if h in hole_net else None for h, name in PERFBOARD.PINS.items()}
         else:
             lib_id, fp, numbers = KIND[kind]
+            fp = FOOTPRINT.get(ref, fp)
             pins = {}
             for h, number in zip(holes, numbers):
                 if h not in hole_net:
